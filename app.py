@@ -6,10 +6,10 @@ from streamlit_gsheets import GSheetsConnection
 # 1. 페이지 설정
 st.set_page_config(page_title="용달 매출 통합 관리 시스템", layout="wide")
 
-# [디자인] 숫자 입력 칸의 + / - 버튼을 숨기는 CSS 추가
+# [디자인 고도화] 숫자 입력창의 -/+ 버튼을 완전히 제거하고 디자인을 통일하는 CSS
 st.markdown("""
     <style>
-    /* 숫자 입력 칸의 증감 버튼 숨기기 */
+    /* 모든 숫자 입력창에서 증감 버튼(-/+) 숨기기 */
     input[type=number]::-webkit-inner-spin-button, 
     input[type=number]::-webkit-outer-spin-button {
         -webkit-appearance: none;
@@ -17,6 +17,11 @@ st.markdown("""
     }
     input[type=number] {
         -moz-appearance: textfield;
+    }
+    /* 읽기 전용(합계) 창의 배경색을 살짝 다르게 하여 구분 (선택사항) */
+    input:disabled {
+        background-color: #f0f2f6 !important;
+        color: #31333F !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -51,27 +56,28 @@ with st.sidebar:
     new_date = st.date_input("운송 일자", date.today())
     new_client = st.text_input("거래처명")
     
-    # 공급가액 입력 시 세액/합계 자동 계산 (버튼 제거됨)
-    new_supply = st.number_input("공급가액", min_value=0, step=1, value=0)
-    new_tax = int(new_supply * 0.1)
-    new_tax_input = st.number_input("세액", min_value=0, step=1, value=new_tax)
-    new_total = new_supply + new_tax_input
-    st.info(f"합계 금액: {new_total:,}원")
+    # 신규 등록 영역 버튼 제거 및 합계 디자인 통일
+    new_supply = st.number_input("공급가액", min_value=0, value=0)
+    new_tax_auto = int(new_supply * 0.1)
+    new_tax = st.number_input("세액", min_value=0, value=new_tax_auto)
+    new_total = new_supply + new_tax
+    
+    # 합계도 입력창과 똑같은 박스 형태로 표시 (수정 불가하게 설정)
+    st.number_input("합계 금액 (자동)", value=new_total, disabled=True)
     
     new_status = st.selectbox("수금상태", ["미입금", "일부입금", "완납"])
-    
     if new_status == "완납":
         new_dep = new_total
     elif new_status == "미입금":
         new_dep = 0
     else:
-        new_dep = st.number_input("입금액", min_value=0, max_value=new_total, step=1)
+        new_dep = st.number_input("입금액", min_value=0, max_value=new_total)
     
     if st.button("내역 저장하기"):
         if new_client:
             new_entry = pd.DataFrame([{
                 "운송 일자": new_date.strftime('%Y-%m-%d'), "거래처": new_client, "공급가액": int(new_supply),
-                "세액": int(new_tax_input), "합계": int(new_total), "수금상태": new_status, "입금액": int(new_dep), "미수금": int(new_total - new_dep)
+                "세액": int(new_tax), "합계": int(new_total), "수금상태": new_status, "입금액": int(new_dep), "미수금": int(new_total - new_dep)
             }])
             final_data = pd.concat([df_raw, new_entry], ignore_index=True)
             conn.update(data=final_data[["운송 일자", "거래처", "공급가액", "세액", "합계", "수금상태", "입금액", "미수금"]])
@@ -101,7 +107,7 @@ if not df.empty:
     
     st.divider()
 
-    # 상세 내역 표 (연번 추가)
+    # 상세 내역 표
     st.subheader("📑 상세 운송 내역")
     display_df = f_df.sort_values(by="운송 일자", ascending=False).copy()
     if not display_df.empty:
@@ -121,22 +127,23 @@ if not df.empty:
                 edit_date = st.date_input("날짜 수정", df.at[row_idx, '운송 일자'])
                 edit_client = st.text_input("거래처 수정", df.at[row_idx, '거래처'])
             with col_e2:
-                # [수정 핵심] 공급가액 수정 시 세액 자동 계산
-                edit_supply = st.number_input("공급가액 수정", value=int(df.at[row_idx, '공급가액']), step=1)
-                auto_tax = int(edit_supply * 0.1)
-                edit_tax = st.number_input("세액 수정", value=auto_tax, step=1)
+                # 공급가액 수정 시 세액 자동 계산
+                edit_supply = st.number_input("공급가액 수정", value=int(df.at[row_idx, '공급가액']))
+                auto_tax_edit = int(edit_supply * 0.1)
+                edit_tax = st.number_input("세액 수정", value=auto_tax_edit)
             with col_e3:
                 edit_status = st.selectbox("수금상태 수정", ["미입금", "일부입금", "완납"], 
                                            index=["미입금", "일부입금", "완납"].index(df.at[row_idx, '수금상태']))
-                # 합계 자동 계산
+                # 합계 계산 및 다른 입력창과 동일한 박스 디자인 적용
                 edit_total = edit_supply + edit_tax
+                st.number_input("수정 후 합계 (자동)", value=edit_total, disabled=True)
+                
                 if edit_status == "완납":
                     edit_dep = edit_total
                 elif edit_status == "미입금":
                     edit_dep = 0
                 else:
-                    edit_dep = st.number_input("입금액 수정", value=int(df.at[row_idx, '입금액']), step=1)
-                st.write(f"수정 후 합계: **{edit_total:,}원**")
+                    edit_dep = st.number_input("입금액 수정", value=int(df.at[row_idx, '입금액']))
 
             btn_col1, btn_col2, _ = st.columns([1, 1, 3])
             
