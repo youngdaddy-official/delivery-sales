@@ -6,22 +6,37 @@ from streamlit_gsheets import GSheetsConnection
 # 1. 페이지 설정
 st.set_page_config(page_title="용달 매출 통합 관리 시스템", layout="wide")
 
-# [디자인 고도화] 숫자 입력창의 -/+ 버튼을 완전히 제거하고 디자인을 통일하는 CSS
+# [디자인 박멸] 숫자 입력창의 -, + 버튼을 완전히 숨기고, 합계 칸 디자인을 통일하는 강력한 CSS
 st.markdown("""
     <style>
-    /* 모든 숫자 입력창에서 증감 버튼(-/+) 숨기기 */
+    /* 1. 숫자 입력창의 모든 버튼(-, +) 강제 숨기기 */
+    div[data-testid="stNumberInputContainer"] button {
+        display: none !important;
+    }
+    
+    /* 2. 버튼이 사라진 자리를 꽉 채우기 */
+    div[data-testid="stNumberInputContainer"] input {
+        padding-right: 1rem !important;
+        padding-left: 1rem !important;
+    }
+
+    /* 3. 브라우저 기본 화살표(스피너) 숨기기 */
     input[type=number]::-webkit-inner-spin-button, 
     input[type=number]::-webkit-outer-spin-button {
-        -webkit-appearance: none;
-        margin: 0;
+        -webkit-appearance: none !important;
+        margin: 0 !important;
     }
     input[type=number] {
-        -moz-appearance: textfield;
+        -moz-appearance: textfield !important;
     }
-    /* 읽기 전용(합계) 창의 배경색을 살짝 다르게 하여 구분 (선택사항) */
+
+    /* 4. 합계(비활성화) 칸을 일반 입력창과 똑같이 흰색으로 만들기 */
     input:disabled {
-        background-color: #f0f2f6 !important;
+        background-color: white !important;
+        -webkit-text-fill-color: #31333F !important; /* 글자색 검정 */
         color: #31333F !important;
+        opacity: 1 !important; /* 투명도 제거 */
+        border: 1px solid rgba(49, 51, 63, 0.2) !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -56,13 +71,12 @@ with st.sidebar:
     new_date = st.date_input("운송 일자", date.today())
     new_client = st.text_input("거래처명")
     
-    # 신규 등록 영역 버튼 제거 및 합계 디자인 통일
     new_supply = st.number_input("공급가액", min_value=0, value=0)
     new_tax_auto = int(new_supply * 0.1)
     new_tax = st.number_input("세액", min_value=0, value=new_tax_auto)
     new_total = new_supply + new_tax
     
-    # 합계도 입력창과 똑같은 박스 형태로 표시 (수정 불가하게 설정)
+    # 합계창을 일반 입력창과 동일한 디자인으로 표시
     st.number_input("합계 금액 (자동)", value=new_total, disabled=True)
     
     new_status = st.selectbox("수금상태", ["미입금", "일부입금", "완납"])
@@ -127,15 +141,15 @@ if not df.empty:
                 edit_date = st.date_input("날짜 수정", df.at[row_idx, '운송 일자'])
                 edit_client = st.text_input("거래처 수정", df.at[row_idx, '거래처'])
             with col_e2:
-                # 공급가액 수정 시 세액 자동 계산
                 edit_supply = st.number_input("공급가액 수정", value=int(df.at[row_idx, '공급가액']))
                 auto_tax_edit = int(edit_supply * 0.1)
                 edit_tax = st.number_input("세액 수정", value=auto_tax_edit)
             with col_e3:
                 edit_status = st.selectbox("수금상태 수정", ["미입금", "일부입금", "완납"], 
                                            index=["미입금", "일부입금", "완납"].index(df.at[row_idx, '수금상태']))
-                # 합계 계산 및 다른 입력창과 동일한 박스 디자인 적용
+                
                 edit_total = edit_supply + edit_tax
+                # 수정 화면에서도 합계 칸을 일반 입력창과 동일한 디자인으로 표시
                 st.number_input("수정 후 합계 (자동)", value=edit_total, disabled=True)
                 
                 if edit_status == "완납":
