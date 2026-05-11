@@ -6,10 +6,10 @@ from streamlit_gsheets import GSheetsConnection
 # 1. 페이지 설정
 st.set_page_config(page_title="용달 매출 통합 관리 시스템", layout="wide")
 
-# [디자인 박멸] 숫자 입력창의 -, + 버튼을 완전히 숨기고, 합계 칸 디자인을 통일하는 강력한 CSS
+# [디자인 끝판왕] 모든 숫자 입력창의 버튼을 없애고, 비활성화된 합계 칸의 디자인을 일반 칸과 완전히 똑같이 만듭니다.
 st.markdown("""
     <style>
-    /* 1. 숫자 입력창의 모든 버튼(-, +) 강제 숨기기 */
+    /* 1. 숫자 입력창의 -, + 버튼 강제 박멸 */
     div[data-testid="stNumberInputContainer"] button {
         display: none !important;
     }
@@ -20,7 +20,7 @@ st.markdown("""
         padding-left: 1rem !important;
     }
 
-    /* 3. 브라우저 기본 화살표(스피너) 숨기기 */
+    /* 3. 브라우저 기본 화살표 숨기기 */
     input[type=number]::-webkit-inner-spin-button, 
     input[type=number]::-webkit-outer-spin-button {
         -webkit-appearance: none !important;
@@ -30,13 +30,24 @@ st.markdown("""
         -moz-appearance: textfield !important;
     }
 
-    /* 4. 합계(비활성화) 칸을 일반 입력창과 똑같이 흰색으로 만들기 */
+    /* 4. 비활성화(합계) 칸 디자인 강제 통일 (흰색 배경, 진한 글자색) */
+    div[data-testid="stNumberInputContainer"] {
+        background-color: white !important;
+        border: 1px solid rgba(49, 51, 63, 0.2) !important;
+        border-radius: 0.5rem !important;
+    }
+
     input:disabled {
         background-color: white !important;
-        -webkit-text-fill-color: #31333F !important; /* 글자색 검정 */
+        -webkit-text-fill-color: #31333F !important; /* 글자색 강제 지정 */
         color: #31333F !important;
         opacity: 1 !important; /* 투명도 제거 */
-        border: 1px solid rgba(49, 51, 63, 0.2) !important;
+    }
+
+    /* 사이드바와 메인 화면 모두에 적용되도록 설정 */
+    .stSidebar input:disabled {
+        background-color: white !important;
+        color: #31333F !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -76,7 +87,7 @@ with st.sidebar:
     new_tax = st.number_input("세액", min_value=0, value=new_tax_auto)
     new_total = new_supply + new_tax
     
-    # 합계창을 일반 입력창과 동일한 디자인으로 표시
+    # [디자인 통일] 사이드바 합계 칸
     st.number_input("합계 금액 (자동)", value=new_total, disabled=True)
     
     new_status = st.selectbox("수금상태", ["미입금", "일부입금", "완납"])
@@ -149,7 +160,7 @@ if not df.empty:
                                            index=["미입금", "일부입금", "완납"].index(df.at[row_idx, '수금상태']))
                 
                 edit_total = edit_supply + edit_tax
-                # 수정 화면에서도 합계 칸을 일반 입력창과 동일한 디자인으로 표시
+                # [디자인 통일] 수정 메뉴 합계 칸
                 st.number_input("수정 후 합계 (자동)", value=edit_total, disabled=True)
                 
                 if edit_status == "완납":
