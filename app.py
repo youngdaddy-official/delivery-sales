@@ -43,39 +43,54 @@ if check_password():
         st.session_state["password_correct"] = False
         st.rerun()
 
-    # [초강력 번역 차단 & 디자인 통일]
+    # [핵심] 디자인 코드가 글씨로 안 나오게 <style> 태그와 unsafe_allow_html 설정을 확실히 합니다.
     st.markdown("""
         <head>
             <meta name="google" content="notranslate">
         </head>
         <style>
-        /* 2. 브라우저가 페이지 전체를 '번역 금지 구역'으로 인식하게 만듦 */
+        /* 번역 방지 설정 */
         html, body, .main, [data-testid="stAppViewContainer"], .stApp {
             -webkit-text-size-adjust: none;
             unicode-bidi: isolate;
         }
+        .notranslate { translate: no !important; }
 
-        /* 3. 구글 번역기가 사용하는 클래스를 강제로 무력화 */
-        .notranslate {
-            translate: no !important;
-        }
-
-        /* [기존 디자인 통일 설정] */
+        /* 디자인 통일 설정 */
         [data-testid="stWidgetLabel"] p { color: #31333F !important; font-weight: 600 !important; opacity: 1 !important; }
+        
+        /* 숫자 입력창 버튼 제거 */
         button[data-testid="stNumberInputStepDown"], button[data-testid="stNumberInputStepUp"],
         div[data-testid="stNumberInputContainer"] button { display: none !important; }
-        input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none !important; margin: 0 !important; }
+        
+        /* 스피너 제거 */
+        input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { 
+            -webkit-appearance: none !important; margin: 0 !important; 
+        }
         input[type=number] { -moz-appearance: textfield !important; }
+
+        /* 입력창 배경 흰색으로 통일 */
         div[data-testid="stNumberInputContainer"], div[data-testid="stTextInputRootElement"], div[data-testid="stSelectbox"] > div {
             background-color: white !important; border: 1px solid rgba(49, 51, 63, 0.2) !important; border-radius: 0.5rem !important;
         }
-        input:disabled { background-color: white !important; color: #31333F !important; -webkit-text-fill-color: #31333F !important; opacity: 1 !important; border: none !important; cursor: default !important; }
+
+        /* 비활성화된 합계 칸 디자인 강제 통일 */
+        input:disabled { 
+            background-color: white !important; 
+            color: #31333F !important; 
+            -webkit-text-fill-color: #31333F !important; 
+            opacity: 1 !important; 
+            border: none !important; 
+            cursor: default !important; 
+        }
+
+        /* 사이드바 스타일 */
         section[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p { color: #31333F !important; }
         section[data-testid="stSidebar"] input:disabled { background-color: white !important; color: #31333F !important; }
         </style>
     """, unsafe_allow_html=True)
 
-    # 전체 화면을 '번역 방지' 상자로 감싸기
+    # 전체 화면 번역 방지 감싸기
     st.markdown('<div class="notranslate">', unsafe_allow_html=True)
 
     st.title("📊 매출 통합 관리시스템")
