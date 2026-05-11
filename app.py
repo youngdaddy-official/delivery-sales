@@ -6,7 +6,7 @@ from streamlit_gsheets import GSheetsConnection
 # 1. 페이지 설정
 st.set_page_config(page_title="매출 통합 관리시스템", layout="wide")
 
-# [디자인 완결] 스피너 제거 + 모든 입력창(비활성화 포함) 디자인 및 글자색 100% 통일
+# [디자인 완결] 스피너 제거 + 모든 라벨/입력창 디자인 및 글자색 100% 통일
 st.markdown("""
     <style>
     /* 1. 모든 위젯 라벨(제목) 글자색 및 투명도 고정 */
@@ -16,7 +16,7 @@ st.markdown("""
         opacity: 1 !important;
     }
 
-    /* 2. 숫자 입력창의 -, + 버튼 및 브라우저 기본 스피너 완전 제거 */
+    /* 2. 숫자 입력창의 -, + 버튼 완전히 제거 */
     button[data-testid="stNumberInputStepDown"],
     button[data-testid="stNumberInputStepUp"],
     div[data-testid="stNumberInputContainer"] button {
@@ -46,11 +46,11 @@ st.markdown("""
         color: #31333F !important;
         -webkit-text-fill-color: #31333F !important;
         opacity: 1 !important;
-        border: none !important; /* 중복 테두리 제거 */
+        border: none !important;
         cursor: default !important;
     }
 
-    /* 사이드바 내부 폰트 및 배경 강제 적용 */
+    /* 사이드바 내부 폰트 및 디자인 강제 적용 */
     section[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {
         color: #31333F !important;
     }
@@ -67,7 +67,7 @@ st.title("📊 매출 통합 관리시스템")
 # 2. 구글 시트 연결
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# 3. 데이터 불러오기 및 전처리
+# 3. 데이터 불러오기
 try:
     df_raw = conn.read(ttl="0")
     if df_raw is None or df_raw.empty:
@@ -91,13 +91,13 @@ with st.sidebar:
     new_date = st.date_input("운송 일자", date.today())
     new_client = st.text_input("거래처명")
     
-    # [핵심] 공급가액 입력 -> 세액 자동 계산 로직
-    new_supply = st.number_input("공급가액", min_value=0, value=0, key="new_s")
-    auto_tax = int(new_supply * 0.1)
-    new_tax = st.number_input("세액", min_value=0, value=auto_tax, key="new_t")
+    # [핵심] 공급가액 입력 시 세액이 10%로 자동 계산되도록 연동
+    new_supply = st.number_input("공급가액", min_value=0, value=0)
+    # 공급가액이 바뀌면 세액 기본값을 10%로 설정
+    new_tax = st.number_input("세액", min_value=0, value=int(new_supply * 0.1))
     
     new_total = new_supply + new_tax
-    st.number_input("합계 금액 (자동)", value=new_total, disabled=True, key="new_tot")
+    st.number_input("합계 금액 (자동)", value=new_total, disabled=True)
     
     new_status = st.selectbox("수금상태", ["미입금", "일부입금", "완납"])
     if new_status == "완납":
@@ -142,7 +142,6 @@ if not df.empty:
     
     st.divider()
 
-    # 상세 내역 표
     st.subheader("📑 상세 운송 장부")
     display_df = f_df.sort_values(by="운송 일자", ascending=False).copy()
     if not display_df.empty:
@@ -150,7 +149,7 @@ if not df.empty:
         st.dataframe(display_df[["번호", "운송 일자", "거래처", "공급가액", "세액", "합계", "수금상태", "입금액", "미수금"]], 
                      use_container_width=True, hide_index=True)
 
-    # 수정 및 삭제 관리
+    # [내역 수정 및 삭제 관리 메뉴]
     st.divider()
     with st.expander("🛠️ 내역 수정 및 삭제 관리"):
         if not display_df.empty:
@@ -159,35 +158,6 @@ if not df.empty:
             
             ce1, ce2, ce3 = st.columns(3)
             with ce1:
-                e_date = ce1.date_input("날짜 수정", df.at[row_idx, '운송 일자'], key="e_d")
-                e_client = ce1.text_input("거래처 수정", df.at[row_idx, '거래처'], key="e_c")
-            with ce2:
-                # [수정 시] 공급가액 -> 세액 자동 계산
-                e_supply = ce2.number_input("공급가액 수정", value=int(df.at[row_idx, '공급가액']), key="e_s")
-                e_tax = ce2.number_input("세액 수정", value=int(e_supply * 0.1), key="e_t")
-            with ce3:
-                e_status = ce3.selectbox("수금상태 수정", ["미입금", "일부입금", "완납"], 
-                                         index=["미입금", "일부입금", "완납"].index(df.at[row_idx, '수금상태']), key="e_st")
-                e_total = e_supply + e_tax
-                st.number_input("수정 후 합계 (자동)", value=e_total, disabled=True, key="e_tot")
-                
-                if e_status == "완납": e_dep = e_total
-                elif e_status == "미입금": e_dep = 0
-                else: e_dep = ce3.number_input("입금액 수정", value=int(df.at[row_idx, '입금액']), key="e_dep_val")
-
-            b1, b2, _ = st.columns([1, 1, 3])
-            if b1.button("💾 이 내용으로 수정 적용"):
-                df.at[row_idx, '운송 일자'] = e_date
-                df.at[row_idx, '거래처'] = e_client
-                df.at[row_idx, '공급가액'], df.at[row_idx, '세액'], df.at[row_idx, '합계'] = e_supply, e_tax, e_total
-                df.at[row_idx, '수금상태'], df.at[row_idx, '입금액'], df.at[row_idx, '미수금'] = e_status, e_dep, e_total - e_dep
-                conn.update(data=df[["운송 일자", "거래처", "공급가액", "세액", "합계", "수금상태", "입금액", "미수금"]])
-                st.success("✅ 수정 완료!")
-                st.rerun()
-
-            if b2.button("🗑️ 해당 내역 삭제", type="primary"):
-                df_del = df.drop(row_idx)
-                conn.update(data=df_del[["운송 일자", "거래처", "공급가액", "세액", "합계", "수금상태", "입금액", "미수금"]])
-                st.rerun()
-else:
-    st.info("💡 등록된 데이터가 없습니다.")
+                e_date = ce1.date_input("날짜 수정", df.at[row_idx, '운송 일자'], key="e_date_val")
+                e_client = ce1.text_input("거래처 수정", df.at[row_idx, '거래처'], key="e_client_val")
+            with ce
