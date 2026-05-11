@@ -4,17 +4,15 @@ from datetime import datetime, date
 from streamlit_gsheets import GSheetsConnection
 
 # 1. 페이지 설정
-st.set_page_config(page_title="용달 매출 통합 관리 시스템", layout="wide")
+st.set_page_config(page_title="매출 통합 관리시스템", layout="wide")
 
-# [디자인 완결] 비활성화된 칸(합계)의 디자인을 일반 칸과 100% 동일하게 강제 고정
+# [디자인 완결] 스피너 제거 + 비활성화 칸(합계) 디자인을 일반 칸과 100% 동일하게 강제 고정
 st.markdown("""
     <style>
-    /* 1. 모든 숫자 입력창의 -, + 버튼 숨기기 */
+    /* 1. 모든 숫자 입력창의 -, + 버튼 및 브라우저 스피너 숨기기 */
     div[data-testid="stNumberInputContainer"] button {
         display: none !important;
     }
-    
-    /* 2. 브라우저 기본 화살표 숨기기 */
     input[type=number]::-webkit-inner-spin-button, 
     input[type=number]::-webkit-outer-spin-button {
         -webkit-appearance: none !important;
@@ -24,40 +22,41 @@ st.markdown("""
         -moz-appearance: textfield !important;
     }
 
-    /* 3. 합계(비활성화) 칸의 디자인을 일반 칸과 똑같이 강제 적용 */
-    /* 배경색, 글자색, 테두리, 투명도 모두 일반 상태와 동일하게 설정 */
-    div[data-testid="stNumberInputContainer"] input:disabled,
-    div[data-testid="stTextInputRootElement"] input:disabled {
-        background-color: white !important;
-        color: #31333F !important; /* 일반 글자색 */
-        -webkit-text-fill-color: #31333F !important; /* 사파리/크롬용 글자색 */
-        opacity: 1 !important; /* 흐릿함 제거 */
-        cursor: default !important;
-        border: none !important; /* 테두리 중복 방지 */
-    }
-
-    /* 입력창을 감싸는 박스 자체의 디자인 통일 */
-    div[data-testid="stNumberInputContainer"], div[data-testid="stTextInputRootElement"] {
+    /* 2. 입력창 디자인 통일 (배경색, 테두리) */
+    div[data-testid="stNumberInputContainer"], 
+    div[data-testid="stTextInputRootElement"],
+    div[data-testid="stNumberInputContainer"] > div {
         background-color: white !important;
         border: 1px solid rgba(49, 51, 63, 0.2) !important;
         border-radius: 0.5rem !important;
     }
 
-    /* 사이드바 내부의 입력창도 동일하게 적용 */
-    section[data-testid="stSidebar"] input:disabled {
+    /* 3. 비활성화(합계) 칸 디자인 강제 통일 (흰색 배경, 진한 글자색) */
+    /* 스트림릿의 비활성화 스타일을 무시하고 일반 칸처럼 보이게 만듭니다. */
+    input:disabled {
+        background-color: white !important;
+        color: #31333F !important; /* 일반 글자색 */
+        -webkit-text-fill-color: #31333F !important; /* 사파리/크롬용 글자색 */
+        opacity: 1 !important; /* 흐릿함 제거 */
+        cursor: default !important;
+    }
+    
+    /* 사이드바 비활성화 칸 별도 지정 */
+    .stSidebar input:disabled {
+        background-color: white !important;
         color: #31333F !important;
         -webkit-text-fill-color: #31333F !important;
-        background-color: white !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🚛 용달 매출 및 업체별 맞춤 통계")
+# 제목 변경
+st.title("📊 매출 통합 관리시스템")
 
 # 2. 구글 시트 연결
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# 3. 데이터 불러오기
+# 3. 데이터 불러오기 및 전처리
 try:
     df_raw = conn.read(ttl="0")
     if df_raw.empty:
@@ -68,6 +67,7 @@ try:
             df['운송 일자'] = pd.to_datetime(df['운송 일자'], errors='coerce')
             df = df.dropna(subset=['운송 일자'])
             df['운송 일자'] = df['운송 일자'].dt.date
+        
         num_cols = ['공급가액', '세액', '합계', '입금액', '미수금']
         for col in num_cols:
             if col in df.columns:
@@ -86,7 +86,7 @@ with st.sidebar:
     new_tax = st.number_input("세액", min_value=0, value=new_tax_auto)
     new_total = new_supply + new_tax
     
-    # 합계 칸 (모양 통일을 위해 다시 number_input 사용, CSS로 디자인 강제 고정)
+    # 합계창 디자인 통일 (비활성화 상태지만 일반 창처럼 보임)
     st.number_input("합계 금액 (자동)", value=new_total, disabled=True)
     
     new_status = st.selectbox("수금상태", ["미입금", "일부입금", "완납"])
@@ -105,42 +105,47 @@ with st.sidebar:
             }])
             final_data = pd.concat([df_raw, new_entry], ignore_index=True)
             conn.update(data=final_data[["운송 일자", "거래처", "공급가액", "세액", "합계", "수금상태", "입금액", "미수금"]])
-            st.success("✅ 저장되었습니다!")
+            st.success("✅ 저장 완료!")
             st.rerun()
 
-# --- [메인 화면] ---
+# --- [메인 화면: 대시보드 및 상세 내역] ---
 if not df.empty:
-    st.subheader("📊 매출 요약 및 분석")
+    st.subheader("📊 매출 현황 요약")
     col_f1, col_f2 = st.columns([1, 1])
     with col_f1:
         start_d, end_d = st.date_input("조회 기간 설정", [date.today().replace(day=1), date.today()])
     with col_f2:
         client_options = ["전체"] + sorted(df["거래처"].unique().tolist())
-        selected_client = st.selectbox("조회할 업체 선택", client_options)
+        selected_client = st.selectbox("업체 필터", client_options)
 
+    # 데이터 필터링
     f_df = df[(df['운송 일자'] >= start_d) & (df['운송 일자'] <= end_d)]
     if selected_client != "전체":
         f_df = f_df[f_df["거래처"] == selected_client]
 
+    # 지표 표시
     m1, m2, m3, m4 = st.columns(4)
-    prefix = f"[{selected_client}] " if selected_client != "전체" else "[전체] "
-    m1.metric(f"{prefix}운송 건수", f"{len(f_df)}건")
-    m2.metric(f"{prefix}매출 합계", f"{int(f_df['합계'].sum()):,}원")
-    m3.metric(f"{prefix}입금액", f"{int(f_df['입금액'].sum()):,}원")
-    m4.metric(f"{prefix}미수금 잔액", f"{int(f_df['미수금'].sum()):,}원", delta_color="inverse")
+    p = f"[{selected_client}] " if selected_client != "전체" else "[전체] "
+    m1.metric(f"{p}운송 건수", f"{len(f_df)}건")
+    m2.metric(f"{p}매출 합계", f"{int(f_df['합계'].sum()):,}원")
+    m3.metric(f"{p}입금액", f"{int(f_df['입금액'].sum()):,}원")
+    m4.metric(f"{p}미수금 잔액", f"{int(f_df['미수금'].sum()):,}원", delta_color="inverse")
     
     st.divider()
 
-    st.subheader("📑 상세 운송 내역")
+    # 상세 내역 표
+    st.subheader("📑 상세 운송 장부")
     display_df = f_df.sort_values(by="운송 일자", ascending=False).copy()
     if not display_df.empty:
         display_df.insert(0, '번호', range(1, len(display_df) + 1))
-        st.dataframe(display_df[["번호", "운송 일자", "거래처", "공급가액", "세액", "합계", "수금상태", "입금액", "미수금"]], use_container_width=True, hide_index=True)
+        st.dataframe(display_df[["번호", "운송 일자", "거래처", "공급가액", "세액", "합계", "수금상태", "입금액", "미수금"]], 
+                     use_container_width=True, hide_index=True)
 
+    # [수정 및 삭제 기능]
     st.divider()
-    with st.expander("🛠️ 상세 내역 수정 및 삭제"):
+    with st.expander("🛠️ 내역 수정 및 삭제 관리"):
         if not display_df.empty:
-            target_no = st.selectbox("수정/삭제할 내역의 '번호' 선택", options=display_df['번호'].tolist())
+            target_no = st.selectbox("수정/삭제할 '번호' 선택", options=display_df['번호'].tolist())
             row_idx = display_df[display_df['번호'] == target_no].index[0]
             
             col_e1, col_e2, col_e3 = st.columns(3)
@@ -152,9 +157,10 @@ if not df.empty:
                 auto_tax_edit = int(edit_supply * 0.1)
                 edit_tax = st.number_input("세액 수정", value=auto_tax_edit)
             with col_e3:
-                edit_status = st.selectbox("수금상태 수정", ["미입금", "일부입금", "완납"], index=["미입금", "일부입금", "완납"].index(df.at[row_idx, '수금상태']))
+                edit_status = st.selectbox("수금상태 수정", ["미입금", "일부입금", "완납"], 
+                                           index=["미입금", "일부입금", "완납"].index(df.at[row_idx, '수금상태']))
                 edit_total = edit_supply + edit_tax
-                # 수정 메뉴의 합계 칸 (사이드바와 동일하게 디자인 통일)
+                # 수정 창의 합계 칸 디자인 통일
                 st.number_input("수정 후 합계 (자동)", value=edit_total, disabled=True)
                 
                 if edit_status == "완납":
@@ -165,6 +171,7 @@ if not df.empty:
                     edit_dep = st.number_input("입금액 수정", value=int(df.at[row_idx, '입금액']))
 
             btn_col1, btn_col2, _ = st.columns([1, 1, 3])
+            
             if btn_col1.button("💾 이 내용으로 수정 적용", type="secondary"):
                 df.at[row_idx, '운송 일자'] = edit_date
                 df.at[row_idx, '거래처'] = edit_client
@@ -174,6 +181,7 @@ if not df.empty:
                 df.at[row_idx, '수금상태'] = edit_status
                 df.at[row_idx, '입금액'] = int(edit_dep)
                 df.at[row_idx, '미수금'] = int(edit_total - edit_dep)
+                
                 conn.update(data=df[["운송 일자", "거래처", "공급가액", "세액", "합계", "수금상태", "입금액", "미수금"]])
                 st.success("✅ 수정 완료!")
                 st.rerun()
