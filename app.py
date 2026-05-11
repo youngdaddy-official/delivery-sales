@@ -8,22 +8,27 @@ st.set_page_config(page_title="매출 통합 관리시스템", layout="wide")
 
 # --- [로그인 체크 함수] ---
 def check_password():
-    """Secrets에 저장된 비밀번호와 입력값을 비교합니다."""
+    # 1. Secrets에 password가 아예 등록 안 된 경우 (현재 사용자님이 보시는 에러 화면)
+    if "password" not in st.secrets:
+        st.error("⚠️ Streamlit Cloud의 Secrets 설정에 'password' 항목이 없습니다.")
+        st.info("Settings -> Secrets 칸에 [password = '나만의비밀번호'] 형식을 확인하고 Save를 눌러주세요.")
+        return False
+
     def password_entered():
-        # [수정된 부분] 코드에 직접 비번을 적지 않고, Secrets에 저장된 값을 불러와 비교합니다.
-        if st.session_state["password_input"] == st.secrets["password"]:
+        # [질문하신 코드 위치] 입력한 비번과 Secrets 비번 비교
+        # 8자리 숫자를 대비해 str()로 감싸서 안전하게 비교합니다.
+        if str(st.session_state["password_input"]) == str(st.secrets["password"]):
             st.session_state["password_correct"] = True
-            del st.session_state["password_input"] 
+            del st.session_state["password_input"]
         else:
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
-        # 로그인 화면 디자인
-        st.markdown("<h2 style='text-align: center;'>🔒 매출 통합 관리시스템</h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center;'>🔒 매출 통합 관리시스템 접속</h2>", unsafe_allow_html=True)
         st.divider()
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
-            st.text_input("비밀번호를 입력하고 엔터를 치세요", type="password", on_change=password_entered, key="password_input")
+            st.text_input("비밀번호(8자리)를 입력하고 엔터를 치세요", type="password", on_change=password_entered, key="password_input")
         return False
     elif not st.session_state["password_correct"]:
         st.error("❌ 비밀번호가 일치하지 않습니다.")
