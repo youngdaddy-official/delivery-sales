@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime, date
 from streamlit_gsheets import GSheetsConnection
 
-# 1. 페이지 설정
+# 1. 페이지 설정 (가장 먼저 실행되어야 함)
 st.set_page_config(page_title="매출 통합 관리시스템", layout="wide")
 
 # --- [로그인 체크 함수] ---
@@ -38,73 +38,84 @@ def check_password():
 # --- [본 프로그램 시작] ---
 if check_password():
     
+    # 2. 디자인 및 번역 방지 설정 (여기가 글자로 나오지 않도록 수정된 핵심 부분입니다)
+    st.markdown("""
+<style>
+    /* 구글 번역 팝업 방지 및 디자인 통일 */
+    html, body, [data-testid="stAppViewContainer"] {
+        -webkit-text-size-adjust: none;
+        unicode-bidi: isolate;
+    }
+    
+    /* 모든 라벨(제목) 글자색 진하게 */
+    [data-testid="stWidgetLabel"] p {
+        color: #31333F !important;
+        font-weight: 600 !important;
+        opacity: 1 !important;
+    }
+
+    /* 숫자 입력창 옆의 -, + 버튼 숨기기 */
+    button[data-testid="stNumberInputStepDown"], 
+    button[data-testid="stNumberInputStepUp"] {
+        display: none !important;
+    }
+
+    /* 숫자 입력창 내부 화살표(스피너) 제거 */
+    input[type=number]::-webkit-inner-spin-button, 
+    input[type=number]::-webkit-outer-spin-button {
+        -webkit-appearance: none !important;
+        margin: 0 !important;
+    }
+    input[type=number] {
+        -moz-appearance: textfield !important;
+    }
+
+    /* 모든 입력창 배경을 흰색으로 고정 */
+    div[data-testid="stNumberInputContainer"], 
+    div[data-testid="stTextInputRootElement"], 
+    div[data-testid="stSelectbox"] > div {
+        background-color: white !important;
+        border: 1px solid rgba(49, 51, 63, 0.2) !important;
+        border-radius: 0.5rem !important;
+    }
+
+    /* 비활성화된(합계) 칸을 일반 칸과 똑같이 보이게 함 */
+    input:disabled {
+        background-color: white !important;
+        color: #31333F !important;
+        -webkit-text-fill-color: #31333F !important;
+        opacity: 1 !important;
+        border: 1px solid rgba(49, 51, 63, 0.1) !important;
+        cursor: default !important;
+    }
+
+    /* 사이드바 글자색 보정 */
+    section[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {
+        color: #31333F !important;
+    }
+</style>
+    """, unsafe_allow_html=True)
+
+    # 3. 번역 방지 메타 태그 추가
+    st.markdown('<head><meta name="google" content="notranslate"></head>', unsafe_allow_html=True)
+
     # 로그아웃 버튼
     if st.sidebar.button("로그아웃"):
         st.session_state["password_correct"] = False
         st.rerun()
 
-    # [핵심] 디자인 코드가 글씨로 안 나오게 <style> 태그와 unsafe_allow_html 설정을 확실히 합니다.
-    st.markdown("""
-        <head>
-            <meta name="google" content="notranslate">
-        </head>
-        <style>
-        /* 번역 방지 설정 */
-        html, body, .main, [data-testid="stAppViewContainer"], .stApp {
-            -webkit-text-size-adjust: none;
-            unicode-bidi: isolate;
-        }
-        .notranslate { translate: no !important; }
-
-        /* 디자인 통일 설정 */
-        [data-testid="stWidgetLabel"] p { color: #31333F !important; font-weight: 600 !important; opacity: 1 !important; }
-        
-        /* 숫자 입력창 버튼 제거 */
-        button[data-testid="stNumberInputStepDown"], button[data-testid="stNumberInputStepUp"],
-        div[data-testid="stNumberInputContainer"] button { display: none !important; }
-        
-        /* 스피너 제거 */
-        input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { 
-            -webkit-appearance: none !important; margin: 0 !important; 
-        }
-        input[type=number] { -moz-appearance: textfield !important; }
-
-        /* 입력창 배경 흰색으로 통일 */
-        div[data-testid="stNumberInputContainer"], div[data-testid="stTextInputRootElement"], div[data-testid="stSelectbox"] > div {
-            background-color: white !important; border: 1px solid rgba(49, 51, 63, 0.2) !important; border-radius: 0.5rem !important;
-        }
-
-        /* 비활성화된 합계 칸 디자인 강제 통일 */
-        input:disabled { 
-            background-color: white !important; 
-            color: #31333F !important; 
-            -webkit-text-fill-color: #31333F !important; 
-            opacity: 1 !important; 
-            border: none !important; 
-            cursor: default !important; 
-        }
-
-        /* 사이드바 스타일 */
-        section[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p { color: #31333F !important; }
-        section[data-testid="stSidebar"] input:disabled { background-color: white !important; color: #31333F !important; }
-        </style>
-    """, unsafe_allow_html=True)
-
-    # 전체 화면 번역 방지 감싸기
-    st.markdown('<div class="notranslate">', unsafe_allow_html=True)
-
     st.title("📊 매출 통합 관리시스템")
 
-    # 2. 구글 시트 연결
+    # 4. 구글 시트 연결
     conn = st.connection("gsheets", type=GSheetsConnection)
 
-    # --- [자동 계산 함수] ---
+    # 자동 계산용 함수
     def update_new_tax():
         st.session_state.new_tax_val = int(st.session_state.new_supply_val * 0.1)
     def update_edit_tax():
         st.session_state.edit_tax_val = int(st.session_state.edit_supply_val * 0.1)
 
-    # 3. 데이터 불러오기
+    # 5. 데이터 불러오기
     try:
         df_raw = conn.read(ttl="0")
         if df_raw is None or df_raw.empty:
@@ -121,7 +132,7 @@ if check_password():
     except Exception as e:
         df = pd.DataFrame(columns=["운송 일자", "거래처", "공급가액", "세액", "합계", "수금상태", "입금액", "미수금"])
 
-    # --- [사이드바: 신규 등록] ---
+    # --- [사이드바: 등록] ---
     with st.sidebar:
         st.header("➕ 신규 내역 등록")
         new_date = st.date_input("운송 일자", date.today())
@@ -132,9 +143,7 @@ if check_password():
         new_total = new_supply + new_tax
         st.number_input("합계 금액 (자동)", value=new_total, disabled=True)
         new_status = st.selectbox("수금상태", ["미입금", "일부입금", "완납"])
-        if new_status == "완납": new_dep = new_total
-        elif new_status == "미입금": new_dep = 0
-        else: new_dep = st.number_input("입금액", min_value=0, max_value=new_total)
+        new_dep = new_total if new_status == "완납" else (0 if new_status == "미입금" else st.number_input("입금액", min_value=0, max_value=new_total))
         
         if st.button("내역 저장하기"):
             if new_client:
@@ -144,7 +153,7 @@ if check_password():
                 st.success("✅ 저장 완료!")
                 st.rerun()
 
-    # --- [메인 화면: 대시보드] ---
+    # --- [메인 화면] ---
     if not df.empty:
         st.subheader("📊 매출 현황 요약")
         clients = ["전체"] + sorted([str(c) for c in df["거래처"].dropna().unique().tolist()])
@@ -153,19 +162,20 @@ if check_password():
         with cf2: selected_client = st.selectbox("업체 필터", clients)
         f_df = df[(df['운송 일자'] >= start_d) & (df['운송 일자'] <= end_d)]
         if selected_client != "전체": f_df = f_df[f_df["거래처"] == selected_client]
+        
         m1, m2, m3, m4 = st.columns(4)
-        p = f"[{selected_client}] " if selected_client != "전체" else "[전체] "
-        m1.metric(f"{p}건수", f"{len(f_df)}건")
-        m2.metric(f"{p}매출", f"{int(f_df['합계'].sum()):,}원")
-        m3.metric(f"{p}입금액", f"{int(f_df['입금액'].sum()):,}원")
-        m4.metric(f"{p}미수금", f"{int(f_df['미수금'].sum()):,}원", delta_color="inverse")
+        m1.metric("건수", f"{len(f_df)}건")
+        m2.metric("매출", f"{int(f_df['합계'].sum()):,}원")
+        m3.metric("입금액", f"{int(f_df['입금액'].sum()):,}원")
+        m4.metric("미수금", f"{int(f_df['미수금'].sum()):,}원", delta_color="inverse")
+        
         st.divider()
         st.subheader("📑 상세 운송 내역")
         display_df = f_df.sort_values(by="운송 일자", ascending=False).copy()
         if not display_df.empty:
             display_df.insert(0, '번호', range(1, len(display_df) + 1))
             st.dataframe(display_df[["번호", "운송 일자", "거래처", "공급가액", "세액", "합계", "수금상태", "입금액", "미수금"]], use_container_width=True, hide_index=True)
-        st.divider()
+
         with st.expander("🛠️ 내역 수정 및 삭제 관리"):
             if not display_df.empty:
                 target_no = st.selectbox("수정/삭제할 번호 선택", options=display_df['번호'].tolist())
@@ -185,24 +195,18 @@ if check_password():
                     e_status = ce3.selectbox("수금상태 수정", ["미입금", "일부입금", "완납"], index=["미입금", "일부입금", "완납"].index(df.at[row_idx, '수금상태']))
                     e_total = e_supply + e_tax
                     st.number_input("수정 후 합계 (자동)", value=e_total, disabled=True)
-                    if e_status == "완납": e_dep = e_total
-                    elif e_status == "미입금": e_dep = 0
-                    else: e_dep = ce3.number_input("입금액 수정", value=int(df.at[row_idx, '입금액']))
+                    e_dep = e_total if e_status == "완납" else (0 if e_status == "미입금" else ce3.number_input("입금액 수정", value=int(df.at[row_idx, '입금액'])))
+                
                 b1, b2, _ = st.columns([1, 1, 3])
-                if b1.button("💾 이 내용으로 수정 적용"):
-                    df.at[row_idx, '운송 일자'] = e_date
-                    df.at[row_idx, '거래처'] = e_client
+                if b1.button("💾 수정 적용"):
+                    df.at[row_idx, '운송 일자'], df.at[row_idx, '거래처'] = e_date, e_client
                     df.at[row_idx, '공급가액'], df.at[row_idx, '세액'], df.at[row_idx, '합계'] = e_supply, e_tax, e_total
                     df.at[row_idx, '수금상태'], df.at[row_idx, '입금액'], df.at[row_idx, '미수금'] = e_status, e_dep, e_total - e_dep
                     conn.update(data=df[["운송 일자", "거래처", "공급가액", "세액", "합계", "수금상태", "입금액", "미수금"]])
                     st.success("✅ 수정 완료!")
                     st.rerun()
-                if b2.button("🗑️ 해당 내역 삭제", type="primary"):
-                    df_del = df.drop(row_idx)
-                    conn.update(data=df_del[["운송 일자", "거래처", "공급가액", "세액", "합계", "수금상태", "입금액", "미수금"]])
+                if b2.button("🗑️ 삭제", type="primary"):
+                    conn.update(data=df.drop(row_idx)[["운송 일자", "거래처", "공급가액", "세액", "합계", "수금상태", "입금액", "미수금"]])
                     st.rerun()
     else:
         st.info("💡 등록된 데이터가 없습니다.")
-
-    # 번역 방지 상자 닫기
-    st.markdown('</div>', unsafe_allow_html=True)
