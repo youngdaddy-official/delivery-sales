@@ -172,4 +172,22 @@ if not df.empty:
                 st.number_input("수정 후 합계 (자동)", value=e_total, disabled=True, key="e_tot")
                 
                 if e_status == "완납": e_dep = e_total
-                elif e_status
+                elif e_status == "미입금": e_dep = 0
+                else: e_dep = ce3.number_input("입금액 수정", value=int(df.at[row_idx, '입금액']), key="e_dep_val")
+
+            b1, b2, _ = st.columns([1, 1, 3])
+            if b1.button("💾 이 내용으로 수정 적용"):
+                df.at[row_idx, '운송 일자'] = e_date
+                df.at[row_idx, '거래처'] = e_client
+                df.at[row_idx, '공급가액'], df.at[row_idx, '세액'], df.at[row_idx, '합계'] = e_supply, e_tax, e_total
+                df.at[row_idx, '수금상태'], df.at[row_idx, '입금액'], df.at[row_idx, '미수금'] = e_status, e_dep, e_total - e_dep
+                conn.update(data=df[["운송 일자", "거래처", "공급가액", "세액", "합계", "수금상태", "입금액", "미수금"]])
+                st.success("✅ 수정 완료!")
+                st.rerun()
+
+            if b2.button("🗑️ 해당 내역 삭제", type="primary"):
+                df_del = df.drop(row_idx)
+                conn.update(data=df_del[["운송 일자", "거래처", "공급가액", "세액", "합계", "수금상태", "입금액", "미수금"]])
+                st.rerun()
+else:
+    st.info("💡 등록된 데이터가 없습니다.")
