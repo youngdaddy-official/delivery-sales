@@ -55,14 +55,10 @@ with st.sidebar:
 # --- [메인 화면: 대시보드] ---
 if not df.empty:
     st.subheader("📊 매출 요약 및 분석")
-    
-    # [필터 구역]
     col_f1, col_f2 = st.columns([1, 1])
     with col_f1:
-        # 기간 필터
         start_d, end_d = st.date_input("조회 기간 설정", [date.today().replace(day=1), date.today()])
     with col_f2:
-        # 업체 필터 (원하셨던 기능!)
         client_options = ["전체"] + sorted(df["거래처"].unique().tolist())
         selected_client = st.selectbox("조회할 업체 선택", client_options)
 
@@ -71,7 +67,7 @@ if not df.empty:
     if selected_client != "전체":
         f_df = f_df[f_df["거래처"] == selected_client]
 
-    # [상단 지표 카드] 필터링된 결과가 반영됨
+    # [상단 지표 카드]
     m1, m2, m3, m4 = st.columns(4)
     label_prefix = f"[{selected_client}] " if selected_client != "전체" else "[전체] "
     m1.metric(f"{label_prefix}운송 건수", f"{len(f_df)}건")
@@ -86,7 +82,6 @@ if not df.empty:
     summary_df = f_df.groupby('거래처').agg(
         운송건수=('거래처', 'size'), 매출합계=('합계', 'sum'), 미수금잔액=('미수금', 'sum')
     ).reset_index().sort_values(by='운송건수', ascending=False)
-    
     summary_df['매출합계'] = summary_df['매출합계'].apply(lambda x: f"{int(x):,}원")
     summary_df['미수금잔액'] = summary_df['미수금잔액'].apply(lambda x: f"{int(x):,}원")
     st.dataframe(summary_df, use_container_width=True, hide_index=True)
@@ -101,14 +96,49 @@ if not df.empty:
         st.dataframe(display_df[["번호", "운송 일자", "거래처", "공급가액", "세액", "합계", "수금상태", "입금액", "미수금"]], 
                      use_container_width=True, hide_index=True)
 
-    # [삭제 기능]
-    with st.expander("🗑️ 내역 삭제"):
+    # [수정 및 삭제 기능]
+    st.divider()
+    with st.expander("🛠️ 상세 내역 수정 및 삭제"):
         if not display_df.empty:
-            del_no = st.selectbox("삭제할 번호 선택", options=display_df['번호'].tolist())
-            if st.button("해당 내역 삭제하기", type="primary"):
-                real_idx = display_df[display_df['번호'] == del_no].index[0]
-                df_final = df.drop(real_idx)
-                conn.update(data=df_final[["운송 일자", "거래처", "공급가액", "세액", "합계", "수금상태", "입금액", "미수금"]])
+            target_no = st.selectbox("수정/삭제할 내역의 '번호' 선택", options=display_df['번호'].tolist())
+            # 실제 원본 데이터프레임의 인덱스 찾기
+            row_idx = display_df[display_df['번호'] == target_no].index[0]
+            
+            # 수정 입력 칸들
+            col_e1, col_e2, col_e3 = st.columns(3)
+            with col_e1:
+                edit_date = st.date_input("날짜 수정", df.at[row_idx, '운송 일자'])
+                edit_client = st.text_input("거래처 수정", df.at[row_idx, '거래처'])
+            with col_e2:
+                edit_supply = st.number_input("공급가액 수정", value=int(df.at[row_idx, '공급가액']))
+                edit_tax = st.number_input("세액 수정", value=int(df.at[row_idx, '세액']))
+            with col_e3:
+                edit_status = st.selectbox("수금상태 수정", ["미입금", "일부입금", "완납"], 
+                                           index=["미입금", "일부입금", "완납"].index(df.at[row_idx, '수금상태']))
+                edit_dep = st.number_input("입금액 수정", value=int(df.at[row_idx, '입금액']))
+
+            # 버튼 구역
+            btn_col1, btn_col2, _ = st.columns([1, 1, 3])
+            
+            if btn_col1.button("💾 이 내용으로 수정 적용", type="secondary"):
+                df.at[row_idx, '운송 일자'] = edit_date
+                df.at[row_idx, '거래처'] = edit_client
+                df.at[row_idx, '공급가액'] = int(edit_supply)
+                df.at[row_idx, '세액'] = int(edit_tax)
+                df.at[row_idx, '합계'] = int(edit_supply + edit_tax)
+                df.at[row_idx, '수금상태'] = edit_status
+                df.at[row_idx, '입금액'] = int(edit_dep)
+                df.at[row_idx, '미수금'] = int((edit_supply + edit_tax) - edit_dep)
+                
+                # 구글 시트 업데이트
+                conn.update(data=df[["운송 일자", "거래처", "공급가액", "세액", "합계", "수금상태", "입금액", "미수금"]])
+                st.success("✅ 수정이 완료되었습니다!")
+                st.rerun()
+
+            if btn_col2.button("🗑️ 해당 내역 완전히 삭제", type="primary"):
+                df_deleted = df.drop(row_idx)
+                conn.update(data=df_deleted[["운송 일자", "거래처", "공급가액", "세액", "합계", "수금상태", "입금액", "미수금"]])
+                st.warning("⚠️ 삭제되었습니다.")
                 st.rerun()
 else:
     st.info("💡 등록된 데이터가 없습니다.")
