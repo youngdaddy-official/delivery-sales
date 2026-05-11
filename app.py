@@ -8,17 +8,20 @@ st.set_page_config(page_title="매출 통합 관리시스템", layout="wide")
 
 # --- [로그인 체크 함수] ---
 def check_password():
-    """Secrets에 저장된 비밀번호와 입력값을 비교합니다."""
+    # Secrets에 password 항목이 아예 없는 경우를 대비한 안전장치
+    if "password" not in st.secrets:
+        st.error("⚠️ Streamlit Cloud의 Secrets 설정에 'password' 항목이 없습니다.")
+        st.info("Settings -> Secrets 칸에 [password = '나만의비밀번호'] 형식을 확인하고 Save를 눌러주세요.")
+        return False
+
     def password_entered():
-        # [수정된 부분] 코드에 직접 비번을 적지 않고, Secrets에 저장된 값을 불러와 비교합니다.
         if st.session_state["password_input"] == st.secrets["password"]:
             st.session_state["password_correct"] = True
-            del st.session_state["password_input"] 
+            del st.session_state["password_input"]
         else:
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
-        # 로그인 화면 디자인
         st.markdown("<h2 style='text-align: center;'>🔒 매출 통합 관리시스템</h2>", unsafe_allow_html=True)
         st.divider()
         col1, col2, col3 = st.columns([1, 1, 1])
