@@ -160,4 +160,33 @@ if not df.empty:
             with ce1:
                 e_date = ce1.date_input("날짜 수정", df.at[row_idx, '운송 일자'], key="e_date_val")
                 e_client = ce1.text_input("거래처 수정", df.at[row_idx, '거래처'], key="e_client_val")
-            with ce
+            with ce2:
+                # [수정 시에도 연동] 공급가액을 고치면 세액이 10%로 자동 변경됨
+                e_supply = ce2.number_input("공급가액 수정", value=int(df.at[row_idx, '공급가액']), key="e_supply_val")
+                e_tax = ce2.number_input("세액 수정", value=int(e_supply * 0.1), key="e_tax_val")
+            with ce3:
+                e_status = ce3.selectbox("수금상태 수정", ["미입금", "일부입금", "완납"], 
+                                         index=["미입금", "일부입금", "완납"].index(df.at[row_idx, '수금상태']), key="e_status_val")
+                e_total = e_supply + e_tax
+                st.number_input("수정 후 합계 (자동)", value=e_total, disabled=True, key="e_total_val")
+                
+                if e_status == "완납": e_dep = e_total
+                elif e_status == "미입금": e_dep = 0
+                else: e_dep = ce3.number_input("입금액 수정", value=int(df.at[row_idx, '입금액']), key="e_dep_val")
+
+            b1, b2, _ = st.columns([1, 1, 3])
+            if b1.button("💾 이 내용으로 수정 적용"):
+                df.at[row_idx, '운송 일자'] = e_date
+                df.at[row_idx, '거래처'] = e_client
+                df.at[row_idx, '공급가액'], df.at[row_idx, '세액'], df.at[row_idx, '합계'] = e_supply, e_tax, e_total
+                df.at[row_idx, '수금상태'], df.at[row_idx, '입금액'], df.at[row_idx, '미수금'] = e_status, e_dep, e_total - e_dep
+                conn.update(data=df[["운송 일자", "거래처", "공급가액", "세액", "합계", "수금상태", "입금액", "미수금"]])
+                st.success("✅ 수정 완료!")
+                st.rerun()
+
+            if b2.button("🗑️ 해당 내역 완전히 삭제", type="primary"):
+                df_del = df.drop(row_idx)
+                conn.update(data=df_del[["운송 일자", "거래처", "공급가액", "세액", "합계", "수금상태", "입금액", "미수금"]])
+                st.rerun()
+else:
+    st.info("💡 등록된 데이터가 없습니다.")
