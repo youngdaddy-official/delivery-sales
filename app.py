@@ -7,6 +7,7 @@ from streamlit_gsheets import GSheetsConnection
 st.set_page_config(page_title="매출 통합 관리시스템", layout="wide")
 
 # --- [로그인 체크 함수] ---
+# --- [로그인 체크 함수 보강버전] ---
 def check_password():
     # Secrets에 password 항목이 아예 없는 경우를 대비한 안전장치
     if "password" not in st.secrets:
