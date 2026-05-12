@@ -106,7 +106,7 @@ if check_password():
         e_date = st.sidebar.date_input("지출 일자", date.today())
         e_category = st.sidebar.selectbox("지출 항목", ["연료비", "통행료", "기타"])
         # [수정] 지출처 입력칸 추가
-        e_vendor = st.sidebar.text_input("지출처 (예: GS칼텍스, 톨게이트 등)")
+        e_vendor = st.sidebar.text_input("지출처")
         e_amount = st.sidebar.number_input("지출 금액", min_value=0, value=0)
         e_memo = st.sidebar.text_input("비고 (선택)")
 
