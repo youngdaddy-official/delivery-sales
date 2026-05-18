@@ -64,7 +64,6 @@ if check_password():
 
     # --- [자동 계산용 콜백 함수] ---
     def update_sales_tax():
-        # 공급가액이 입력되는 순간 세액을 10%로 강제 계산하여 세션에 보관합니다.
         st.session_state.s_tax_val = int(st.session_state.s_sup_val * 0.1)
 
     # --- [데이터 로드 함수] ---
@@ -95,10 +94,8 @@ if check_password():
         s_origin = st.sidebar.text_input("출발지 (시/군/구 단위 등)")
         s_dest = st.sidebar.text_input("도착지 (시/군/구 단위 등)")
         
-        # [핵심 보완] 공급가액 입력 시 세액 계산 함수(on_change) 연동
         s_supply = st.sidebar.number_input("공급가액", min_value=0, key="s_sup_val", on_change=update_sales_tax)
         
-        # 세액 변수 초기화 및 세션 상태 연결
         if 's_tax_val' not in st.session_state:
             st.session_state.s_tax_val = 0
         s_tax = st.sidebar.number_input("세액 (자동)", min_value=0, key="s_tax_val")
@@ -151,10 +148,19 @@ if check_password():
 
     # --- [메인 화면: 대시보드] ---
     st.subheader("📈 통합 현황 요약")
-    cf1, cf2 = st.columns(2)
-    with cf1:
-        start_d, end_d = st.date_input("조회 기간", [date.today().replace(day=1), date.today()])
+    
+    # 레이아웃 조정: 기간 선택 창이 화면 왼쪽 절반을 이쁘게 채우도록 설정
+    col_date, _ = st.columns([1, 1])
+    with col_date:
+        date_range = st.date_input("조회 기간", [date.today().replace(day=1), date.today()])
+    
+    # [안전장치] 시작일만 선택하고 종료일은 고르는 중일 때 프로그램이 멈추지 않도록 방어합니다.
+    if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
+        start_d, end_d = date_range
+    else:
+        start_d = end_d = date_range[0] if isinstance(date_range, (list, tuple)) else date_range
 
+    # 데이터 필터링
     f_sales = df_sales[(df_sales['운송 일자'] >= start_d) & (df_sales['운송 일자'] <= end_d)] if not df_sales.empty else pd.DataFrame()
     f_exp = df_exp[(df_exp['지출 일자'] >= start_d) & (df_exp['지출 일자'] <= end_d)] if not df_exp.empty else pd.DataFrame()
 
