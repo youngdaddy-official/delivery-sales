@@ -62,6 +62,11 @@ if check_password():
     # 2. 구글 시트 연결
     conn = st.connection("gsheets", type=GSheetsConnection)
 
+    # --- [자동 계산용 콜백 함수] ---
+    def update_sales_tax():
+        # 공급가액이 입력되는 순간 세액을 10%로 강제 계산하여 세션에 보관합니다.
+        st.session_state.s_tax_val = int(st.session_state.s_sup_val * 0.1)
+
     # --- [데이터 로드 함수] ---
     def load_data(sheet_name):
         try:
@@ -87,13 +92,17 @@ if check_password():
         st.sidebar.header("➕ 신규 매출 등록")
         s_date = st.sidebar.date_input("운송 일자", date.today())
         s_client = st.sidebar.text_input("거래처명")
-        
-        # [수정] 출발지와 도착지 입력칸 추가
         s_origin = st.sidebar.text_input("출발지 (시/군/구 단위 등)")
         s_dest = st.sidebar.text_input("도착지 (시/군/구 단위 등)")
         
-        s_supply = st.sidebar.number_input("공급가액", min_value=0, value=0, key="s_sup")
-        s_tax = st.sidebar.number_input("세액", min_value=0, value=int(s_supply * 0.1), key="s_tax")
+        # [핵심 보완] 공급가액 입력 시 세액 계산 함수(on_change) 연동
+        s_supply = st.sidebar.number_input("공급가액", min_value=0, key="s_sup_val", on_change=update_sales_tax)
+        
+        # 세액 변수 초기화 및 세션 상태 연결
+        if 's_tax_val' not in st.session_state:
+            st.session_state.s_tax_val = 0
+        s_tax = st.sidebar.number_input("세액", min_value=0, key="s_tax_val")
+        
         s_total = s_supply + s_tax
         st.sidebar.number_input("합계 금액 (자동)", value=s_total, disabled=True)
         s_status = st.sidebar.selectbox("수금상태", ["미입금", "일부입금", "완납"])
@@ -101,18 +110,17 @@ if check_password():
 
         if st.sidebar.button("매출 저장하기"):
             if s_client and s_origin and s_dest:
-                # [수정] 출발지와 도착지 데이터를 포함하여 데이터프레임 생성
                 new_s = pd.DataFrame([{
                     "운송 일자": s_date.strftime('%Y-%m-%d'), 
                     "거래처": s_client, 
                     "출발지": s_origin,
                     "도착지": s_dest,
-                    "공급가액": s_supply, 
-                    "세액": s_tax, 
-                    "합계": s_total, 
+                    "공급가액": int(s_supply), 
+                    "세액": int(s_tax), 
+                    "합계": int(s_total), 
                     "수금상태": s_status, 
-                    "입금액": s_dep, 
-                    "미수금": s_total - s_dep
+                    "입금액": int(s_dep), 
+                    "미수금": int(s_total - s_dep)
                 }])
                 conn.update(worksheet="매출", data=pd.concat([df_sales, new_s], ignore_index=True))
                 st.sidebar.success("✅ 매출 저장 완료!")
@@ -163,7 +171,6 @@ if check_password():
     
     with tab1:
         if not f_sales.empty:
-            # 출발지와 도착지가 포함된 표가 자동으로 정렬되어 나옵니다.
             st.dataframe(f_sales.sort_values("운송 일자", ascending=False), use_container_width=True, hide_index=True)
         else:
             st.info("기간 내 매출 내역이 없습니다.")
