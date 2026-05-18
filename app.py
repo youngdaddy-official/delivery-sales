@@ -87,6 +87,11 @@ if check_password():
         st.sidebar.header("➕ 신규 매출 등록")
         s_date = st.sidebar.date_input("운송 일자", date.today())
         s_client = st.sidebar.text_input("거래처명")
+        
+        # [수정] 출발지와 도착지 입력칸 추가
+        s_origin = st.sidebar.text_input("출발지 (시/군/구 단위 등)")
+        s_dest = st.sidebar.text_input("도착지 (시/군/구 단위 등)")
+        
         s_supply = st.sidebar.number_input("공급가액", min_value=0, value=0, key="s_sup")
         s_tax = st.sidebar.number_input("세액", min_value=0, value=int(s_supply * 0.1), key="s_tax")
         s_total = s_supply + s_tax
@@ -95,24 +100,40 @@ if check_password():
         s_dep = s_total if s_status == "완납" else (0 if s_status == "미입금" else st.sidebar.number_input("입금액", min_value=0, max_value=s_total))
 
         if st.sidebar.button("매출 저장하기"):
-            if s_client:
-                new_s = pd.DataFrame([{"운송 일자": s_date.strftime('%Y-%m-%d'), "거래처": s_client, "공급가액": s_supply, "세액": s_tax, "합계": s_total, "수금상태": s_status, "입금액": s_dep, "미수금": s_total - s_dep}])
+            if s_client and s_origin and s_dest:
+                # [수정] 출발지와 도착지 데이터를 포함하여 데이터프레임 생성
+                new_s = pd.DataFrame([{
+                    "운송 일자": s_date.strftime('%Y-%m-%d'), 
+                    "거래처": s_client, 
+                    "출발지": s_origin,
+                    "도착지": s_dest,
+                    "공급가액": s_supply, 
+                    "세액": s_tax, 
+                    "합계": s_total, 
+                    "수금상태": s_status, 
+                    "입금액": s_dep, 
+                    "미수금": s_total - s_dep
+                }])
                 conn.update(worksheet="매출", data=pd.concat([df_sales, new_s], ignore_index=True))
                 st.sidebar.success("✅ 매출 저장 완료!")
                 st.rerun()
+            elif not s_client:
+                st.sidebar.warning("⚠️ 거래처명을 입력해 주세요.")
+            elif not s_origin:
+                st.sidebar.warning("⚠️ 출발지를 입력해 주세요.")
+            elif not s_dest:
+                st.sidebar.warning("⚠️ 도착지를 입력해 주세요.")
 
     else:
         st.sidebar.header("💸 신규 지출 등록")
         e_date = st.sidebar.date_input("지출 일자", date.today())
         e_category = st.sidebar.selectbox("지출 항목", ["연료비", "통행료", "기타"])
-        # [수정] 지출처 입력칸 추가
         e_vendor = st.sidebar.text_input("지출처")
         e_amount = st.sidebar.number_input("지출 금액", min_value=0, value=0)
         e_memo = st.sidebar.text_input("비고 (선택)")
 
         if st.sidebar.button("지출 저장하기"):
             if e_amount > 0 and e_vendor:
-                # [수정] 지출처 데이터를 포함하여 저장
                 new_e = pd.DataFrame([{"지출 일자": e_date.strftime('%Y-%m-%d'), "지출 항목": e_category, "지출처": e_vendor, "금액": e_amount, "비고": e_memo}])
                 conn.update(worksheet="지출", data=pd.concat([df_exp, new_e], ignore_index=True))
                 st.sidebar.success("✅ 지출 저장 완료!")
@@ -142,13 +163,13 @@ if check_password():
     
     with tab1:
         if not f_sales.empty:
+            # 출발지와 도착지가 포함된 표가 자동으로 정렬되어 나옵니다.
             st.dataframe(f_sales.sort_values("운송 일자", ascending=False), use_container_width=True, hide_index=True)
         else:
             st.info("기간 내 매출 내역이 없습니다.")
 
     with tab2:
         if not f_exp.empty:
-            # [확인] 상세 내역 표에 지출처가 포함되어 나옵니다.
             st.dataframe(f_exp.sort_values("지출 일자", ascending=False), use_container_width=True, hide_index=True)
             st.write("📊 항목별 지출 요약")
             st.bar_chart(f_exp.groupby("지출 항목")["금액"].sum())
