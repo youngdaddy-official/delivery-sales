@@ -101,7 +101,7 @@ if check_password():
         # 세액 변수 초기화 및 세션 상태 연결
         if 's_tax_val' not in st.session_state:
             st.session_state.s_tax_val = 0
-        s_tax = st.sidebar.number_input("세액", min_value=0, key="s_tax_val")
+        s_tax = st.sidebar.number_input("세액 (자동)", min_value=0, key="s_tax_val")
         
         s_total = s_supply + s_tax
         st.sidebar.number_input("합계 금액 (자동)", value=s_total, disabled=True)
