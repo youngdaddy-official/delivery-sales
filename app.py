@@ -53,13 +53,6 @@ if check_password():
     """, unsafe_allow_html=True)
     st.markdown('<head><meta name="google" content="notranslate"></head>', unsafe_allow_html=True)
 
-    # 로그아웃 버튼은 사이드바에 깔끔하게 보관
-    if st.sidebar.button("로그아웃"):
-        st.session_state["password_correct"] = False
-        st.rerun()
-
-    st.title("📊 매출 및 지출 통합 관리시스템")
-
     # 2. 구글 시트 연결
     conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -90,7 +83,68 @@ if check_password():
     df_sales = load_data("매출")
     df_exp = load_data("지출")
 
-    # --- [메인 섹션 1: 대시보드 요약] ---
+    # --- [사이드바: 왼쪽 기존 부분으로 모든 입력 메뉴 통합] ---
+    with st.sidebar:
+        st.header("📝 신규 내역 등록")
+        
+        # [구역 1] 매출 등록 입력창
+        st.subheader("🟢 신규 매출 등록")
+        s_date = st.date_input("운송 일자", date.today(), key="side_s_date")
+        s_client = st.text_input("거래처명", key="side_s_client")
+        s_origin = st.text_input("출발지", key="side_s_ori")
+        s_dest = st.text_input("도착지", key="side_s_des")
+        
+        s_fare = st.number_input("운임료", min_value=0, value=0, key="s_fare_val", on_change=update_sales_tax)
+        s_fee = st.number_input("수수료", min_value=0, value=0, key="side_s_fee")
+        
+        if 's_tax_val' not in st.session_state:
+            st.session_state.s_tax_val = 0
+        s_tax = st.number_input("세액 (자동)", min_value=0, key="s_tax_val")
+        
+        s_total = s_fare - s_fee + s_tax
+        st.number_input("매출 합계 (자동)", value=s_total, disabled=True, key="side_s_total")
+        
+        s_pmethod = st.selectbox("결제방식", ["이체", "현금", "전자세금계산서", "카드"], key="side_s_pm")
+        s_status = st.selectbox("수금상태", ["미입금", "일부입금", "완납"], key="side_s_st")
+        s_dep = s_total if s_status == "완납" else (0 if s_status == "미입금" else st.number_input("입금액", min_value=0, max_value=s_total, key="side_s_dep"))
+
+        if st.button("💾 매출 저장하기", use_container_width=True, key="btn_s_save"):
+            if s_client and s_origin and s_dest:
+                new_s = pd.DataFrame([{"운송 일자": s_date.strftime('%Y-%m-%d'), "거래처": s_client, "출발지": s_origin, "도착지": s_dest, "운임료": int(s_fare), "수수료": int(s_fee), "세액": int(s_tax), "합계": int(s_total), "결제방식": s_pmethod, "수금상태": s_status, "입금액": int(s_dep), "미수금": int(s_total - s_dep)}])
+                conn.update(worksheet="매출", data=pd.concat([df_sales, new_s], ignore_index=True))
+                st.success("✅ 매출 저장 완료!")
+                st.rerun()
+            elif not s_client: st.warning("⚠️ 거래처명을 입력해 주세요.")
+            elif not s_origin: st.warning("⚠️ 출발지를 입력해 주세요.")
+            elif not s_dest: st.warning("⚠️ 도착지를 입력해 주세요.")
+
+        st.markdown("---") # 매출과 지출 구분선
+        
+        # [구역 2] 지출 등록 입력창
+        st.subheader("🔴 신규 지출 등록")
+        e_date = st.date_input("지출 일자", date.today(), key="side_e_date")
+        e_category = st.selectbox("지출 항목", ["연료비", "통행료", "기타"], key="side_e_cat")
+        e_vendor = st.text_input("지출처", key="side_e_ven")
+        e_amount = st.number_input("지출 금액", min_value=0, value=0, key="side_e_amo")
+        e_memo = st.text_input("비고 (선택)", key="side_e_mem")
+
+        if st.button("💾 지출 저장하기", use_container_width=True, key="btn_e_save"):
+            if e_amount > 0 and e_vendor:
+                new_e = pd.DataFrame([{"지출 일자": e_date.strftime('%Y-%m-%d'), "지출 항목": e_category, "지출처": e_vendor, "금액": e_amount, "비고": e_memo}])
+                conn.update(worksheet="지출", data=pd.concat([df_exp, new_e], ignore_index=True))
+                st.success("✅ 지출 저장 완료!")
+                st.rerun()
+            elif not e_vendor:
+                st.error("⚠️ 지출처를 입력해 주세요.")
+
+        st.markdown("---")
+        # 로그아웃 버튼 최하단 배치
+        if st.button("🚪 로그아웃", use_container_width=True):
+            st.session_state["password_correct"] = False
+            st.rerun()
+
+    # --- [메인 화면: 대시보드 및 통합 장부] ---
+    st.title("📊 매출 및 지출 통합 관리시스템")
     st.subheader("📈 통합 현황 요약")
     
     col_date, _ = st.columns([1, 1])
@@ -102,9 +156,11 @@ if check_password():
     else:
         start_d = end_d = date_range[0] if isinstance(date_range, (list, tuple)) else date_range
 
+    # 데이터 필터링
     f_sales = df_sales[(df_sales['운송 일자'] >= start_d) & (df_sales['운송 일자'] <= end_d)] if not df_sales.empty else pd.DataFrame()
     f_exp = df_exp[(df_exp['지출 일자'] >= start_d) & (df_exp['지출 일자'] <= end_d)] if not df_exp.empty else pd.DataFrame()
 
+    # 금액 계산 및 수익 공식 적용
     total_s = int(f_sales['합계'].sum()) if not f_sales.empty else 0
     total_e = int(f_exp['금액'].sum()) if not f_exp.empty else 0
     profit = total_s - total_e
@@ -114,76 +170,10 @@ if check_password():
     m2.metric("총 지출액 (연료비+통행료+기타)", f"{total_e:,}원")
     m3.metric("순수익 (매출 - 지출)", f"{profit:,}원", delta=f"{profit:,}원")
 
-    # --- [메인 섹션 2: 한 페이지 좌우 입력 메뉴] ---
-    st.divider()
-    
-    # 접었다 폈다 할 수 있는 대형 보관함(Expander)으로 감싸 화면을 더 깔끔하게 만듭니다.
-    with st.expander("📝 신규 내역 등록 (이곳에서 매출과 지출을 바로 입력하세요)", expanded=True):
-        col_sales, col_exp = st.columns(2)
-        
-        # 왼쪽 칸: 매출 등록
-        with col_sales:
-            st.markdown("### 🟢 신규 매출 등록")
-            s_date = st.date_input("운송 일자", date.today(), key="in_s_date")
-            s_client = st.text_input("거래처명", key="in_s_client")
-            
-            c_route1, c_route2 = st.columns(2)
-            with c_route1: s_origin = st.text_input("출발지", key="in_s_ori")
-            with c_route2: s_dest = st.text_input("도착지", key="in_s_des")
-            
-            c_money1, c_money2 = st.columns(2)
-            with c_money1: s_fare = st.number_input("운임료", min_value=0, value=0, key="s_fare_val", on_change=update_sales_tax)
-            with c_money2: s_fee = st.number_input("수수료", min_value=0, value=0, key="s_fee_val")
-            
-            if 's_tax_val' not in st.session_state:
-                st.session_state.s_tax_val = 0
-            
-            c_money3, c_money4 = st.columns(2)
-            with c_money3: s_tax = st.number_input("세액 (자동)", min_value=0, key="s_tax_val")
-            s_total = s_fare - s_fee + s_tax
-            with c_money4: st.number_input("매출 합계 (자동)", value=s_total, disabled=True, key="in_s_total")
-            
-            c_pay1, c_pay2 = st.columns(2)
-            with c_pay1: s_pmethod = st.selectbox("결제방식", ["이체", "현금", "전자세금계산서", "카드"], key="in_s_pm")
-            with c_pay2: s_status = st.selectbox("수금상태", ["미입금", "일부입금", "완납"], key="in_s_st")
-            
-            s_dep = s_total if s_status == "완납" else (0 if s_status == "미입금" else st.number_input("입금액", min_value=0, max_value=s_total, key="in_s_dep"))
-
-            if st.button("💾 매출 저장하기", use_container_width=True):
-                if s_client and s_origin and s_dest:
-                    new_s = pd.DataFrame([{"운송 일자": s_date.strftime('%Y-%m-%d'), "거래처": s_client, "출발지": s_origin, "도착지": s_dest, "운임료": int(s_fare), "수수료": int(s_fee), "세액": int(s_tax), "합계": int(s_total), "결제방식": s_pmethod, "수금상태": s_status, "입금액": int(s_dep), "미수금": int(s_total - s_dep)}])
-                    conn.update(worksheet="매출", data=pd.concat([df_sales, new_s], ignore_index=True))
-                    st.success("✅ 매출 저장 완료!")
-                    st.rerun()
-                elif not s_client: st.sidebar.warning("⚠️ 거래처명을 입력해 주세요.")
-                elif not s_origin: st.sidebar.warning("⚠️ 출발지를 입력해 주세요.")
-                elif not s_dest: st.sidebar.warning("⚠️ 도착지를 입력해 주세요.")
-
-        # 오른쪽 칸: 지출 등록
-        with col_exp:
-            st.markdown("### 🔴 신규 지출 등록")
-            e_date = st.date_input("지출 일자", date.today(), key="in_e_date")
-            e_category = st.selectbox("지출 항목", ["연료비", "통행료", "기타"], key="in_e_cat")
-            e_vendor = st.text_input("지출처", key="in_e_ven")
-            e_amount = st.number_input("지출 금액", min_value=0, value=0, key="in_e_amo")
-            e_memo = st.text_input("비고 (선택)", key="in_e_mem")
-            
-            # 매출 입력창과 높이를 맞추기 위한 여백용 빈 칸
-            st.markdown("<br><br><br><br><br>", unsafe_allow_html=True)
-
-            if st.button("💾 지출 저장하기", use_container_width=True):
-                if e_amount > 0 and e_vendor:
-                    new_e = pd.DataFrame([{"지출 일자": e_date.strftime('%Y-%m-%d'), "지출 항목": e_category, "지출처": e_vendor, "금액": e_amount, "비고": e_memo}])
-                    conn.update(worksheet="지출", data=pd.concat([df_exp, new_e], ignore_index=True))
-                    st.success("✅ 지출 저장 완료!")
-                    st.rerun()
-                elif not e_vendor:
-                    st.error("⚠️ 지출처를 입력해 주세요.")
-
-    # --- [메인 섹션 3: 통합 입출금 장부] ---
     st.divider()
     st.subheader("📝 통합 입출금 장부")
 
+    # --- 매출과 지출 데이터 하나로 합치기 로직 ---
     t_sales = pd.DataFrame()
     if not f_sales.empty:
         t_sales = pd.DataFrame({
@@ -210,6 +200,7 @@ if check_password():
             "비고": f_exp["비고"].fillna("").astype(str)
         })
 
+    # 두 장부를 하나로 묶고 날짜 최신순으로 정렬
     if not t_sales.empty or not t_exp.empty:
         df_total = pd.concat([t_sales, t_exp], ignore_index=True)
         df_total = df_total.sort_values(by="날짜", ascending=False)
