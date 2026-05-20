@@ -89,11 +89,13 @@ if check_password():
     df_sales = load_data("매출")
     df_exp = load_data("지출")
 
-    # --- [사이드바: 등록 메뉴] ---
-    menu = st.sidebar.selectbox("📝 작업 선택", ["매출 등록", "지출 등록"])
+    # --- [사이드바: 통합 등록 메뉴] ---
+    st.sidebar.header("📝 신규 내역 등록")
+    # 라디오 버튼을 가로로 배치하여 매출/지출을 직관적으로 선택하게 합니다.
+    insert_type = st.sidebar.radio("구분 선택", ["🟢 매출", "🔴 지출"], horizontal=True)
 
-    if menu == "매출 등록":
-        st.sidebar.header("➕ 신규 매출 등록")
+    if insert_type == "🟢 매출":
+        st.sidebar.markdown("---")
         s_date = st.sidebar.date_input("운송 일자", date.today())
         s_client = st.sidebar.text_input("거래처명")
         s_origin = st.sidebar.text_input("출발지")
@@ -113,7 +115,7 @@ if check_password():
         s_status = st.sidebar.selectbox("수금상태", ["미입금", "일부입금", "완납"])
         s_dep = s_total if s_status == "완납" else (0 if s_status == "미입금" else st.sidebar.number_input("입금액", min_value=0, max_value=s_total))
 
-        if st.sidebar.button("매출 저장하기"):
+        if st.sidebar.button("💾 매출 저장하기", use_container_width=True):
             if s_client and s_origin and s_dest:
                 new_s = pd.DataFrame([{
                     "운송 일자": s_date.strftime('%Y-%m-%d'), 
@@ -137,14 +139,14 @@ if check_password():
             elif not s_dest: st.sidebar.warning("⚠️ 도착지를 입력해 주세요.")
 
     else:
-        st.sidebar.header("💸 신규 지출 등록")
+        st.sidebar.markdown("---")
         e_date = st.sidebar.date_input("지출 일자", date.today())
         e_category = st.sidebar.selectbox("지출 항목", ["연료비", "통행료", "기타"])
         e_vendor = st.sidebar.text_input("지출처")
         e_amount = st.sidebar.number_input("지출 금액", min_value=0, value=0)
         e_memo = st.sidebar.text_input("비고 (선택)")
 
-        if st.sidebar.button("지출 저장하기"):
+        if st.sidebar.button("💾 지출 저장하기", use_container_width=True):
             if e_amount > 0 and e_vendor:
                 new_e = pd.DataFrame([{"지출 일자": e_date.strftime('%Y-%m-%d'), "지출 항목": e_category, "지출처": e_vendor, "금액": e_amount, "비고": e_memo}])
                 conn.update(worksheet="지출", data=pd.concat([df_exp, new_e], ignore_index=True))
@@ -182,7 +184,7 @@ if check_password():
     st.divider()
     st.subheader("📝 통합 입출금 장부")
 
-    # --- [1. 매출과 지출 데이터 하나로 합치기 로직] ---
+    # --- 매출과 지출 데이터 하나로 합치기 로직 ---
     t_sales = pd.DataFrame()
     if not f_sales.empty:
         t_sales = pd.DataFrame({
@@ -214,7 +216,6 @@ if check_password():
         df_total = pd.concat([t_sales, t_exp], ignore_index=True)
         df_total = df_total.sort_values(by="날짜", ascending=False)
         
-        # 금액에 자동으로 콤마(,)가 찍히도록 포맷 설정하여 하나의 표로 출력
         st.dataframe(
             df_total, 
             use_container_width=True, 
