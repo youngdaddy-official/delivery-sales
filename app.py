@@ -64,7 +64,6 @@ if check_password():
 
     # --- [자동 계산용 콜백 함수] ---
     def update_sales_tax():
-        # 세액은 운임료의 10%로 자동 계산되도록 설정합니다.
         st.session_state.s_tax_val = int(st.session_state.s_fare_val * 0.1)
 
     # --- [데이터 로드 함수] ---
@@ -79,7 +78,6 @@ if check_password():
                 df[date_col] = pd.to_datetime(df[date_col], errors='coerce').dt.date
                 df = df.dropna(subset=[date_col])
             
-            # 숫자 데이터 포맷팅 안전하게 변환
             num_cols = ['운임료', '수수료', '세액', '합계', '입금액', '미수금'] if sheet_name == "매출" else ['금액']
             for col in num_cols:
                 if col in df.columns:
@@ -98,12 +96,9 @@ if check_password():
         st.sidebar.header("➕ 신규 매출 등록")
         s_date = st.sidebar.date_input("운송 일자", date.today())
         s_client = st.sidebar.text_input("거래처명")
+        s_origin = st.sidebar.text_input("출발지")
+        s_dest = st.sidebar.text_input("도착지")
         
-        # 3. 운송 출발지와 도착지 입력칸 추가
-        s_origin = st.sidebar.text_input("출발지 (상세 경로)")
-        s_dest = st.sidebar.text_input("도착지 (상세 경로)")
-        
-        # 매출 세부 금액 입력 (운임료 입력 시 세액 자동 연동)
         s_fare = st.sidebar.number_input("운임료", min_value=0, value=0, key="s_fare_val", on_change=update_sales_tax)
         s_fee = st.sidebar.number_input("수수료", min_value=0, value=0, key="s_fee_val")
         
@@ -111,13 +106,10 @@ if check_password():
             st.session_state.s_tax_val = 0
         s_tax = st.sidebar.number_input("세액 (자동)", min_value=0, key="s_tax_val")
         
-        # 공식 적용: 매출 합계 = 운임료 - 수수료 + 세액
         s_total = s_fare - s_fee + s_tax
         st.sidebar.number_input("매출 합계 (자동)", value=s_total, disabled=True)
         
-        # 4. 결제방식 선택 추가
         s_pmethod = st.sidebar.selectbox("결제방식", ["이체", "현금", "전자세금계산서", "카드"])
-        
         s_status = st.sidebar.selectbox("수금상태", ["미입금", "일부입금", "완납"])
         s_dep = s_total if s_status == "완납" else (0 if s_status == "미입금" else st.sidebar.number_input("입금액", min_value=0, max_value=s_total))
 
@@ -177,29 +169,60 @@ if check_password():
     f_sales = df_sales[(df_sales['운송 일자'] >= start_d) & (df_sales['운송 일자'] <= end_d)] if not df_sales.empty else pd.DataFrame()
     f_exp = df_exp[(df_exp['지출 일자'] >= start_d) & (df_exp['지출 일자'] <= end_d)] if not df_exp.empty else pd.DataFrame()
 
-    # 1, 2. 금액 계산 및 새로운 수익 공식 적용 대시보드 표시
+    # 금액 계산 및 수익 공식 적용
     total_s = int(f_sales['합계'].sum()) if not f_sales.empty else 0
     total_e = int(f_exp['금액'].sum()) if not f_exp.empty else 0
-    profit = total_s - total_e # 매출 합계(운임료-수수료+세액) - 지출 합계(연료비+통행료+기타)
+    profit = total_s - total_e
 
     m1, m2, m3 = st.columns(3)
     m1.metric("총 매출액 (운임-수수료+세액)", f"{total_s:,}원")
     m2.metric("총 지출액 (연료비+통행료+기타)", f"{total_e:,}원")
     m3.metric("순수익 (매출 - 지출)", f"{profit:,}원", delta=f"{profit:,}원")
 
-    tab1, tab2 = st.tabs(["🚛 매출 내역", "💰 지출 내역"])
-    
-    with tab1:
-        if not f_sales.empty:
-            # 새 컬럼들이 포함된 매출 내역 테이블을 보여줍니다.
-            st.dataframe(f_sales.sort_values("운송 일자", ascending=False), use_container_width=True, hide_index=True)
-        else:
-            st.info("기간 내 매출 내역이 없습니다.")
+    st.divider()
+    st.subheader("📝 통합 입출금 장부")
 
-    with tab2:
-        if not f_exp.empty:
-            st.dataframe(f_exp.sort_values("지출 일자", ascending=False), use_container_width=True, hide_index=True)
-            st.write("📊 항목별 지출 요약")
-            st.bar_chart(f_exp.groupby("지출 항목")["금액"].sum())
-        else:
-            st.info("기간 내 지출 내역이 없습니다.")
+    # --- [1. 매출과 지출 데이터 하나로 합치기 로직] ---
+    t_sales = pd.DataFrame()
+    if not f_sales.empty:
+        t_sales = pd.DataFrame({
+            "날짜": f_sales["운송 일자"],
+            "구분": "🟢 매출",
+            "거래처/지출처": f_sales["거래처"],
+            "상세 내용 (경로/항목)": f_sales["출발지"].astype(str) + " ➡️ " + f_sales["도착지"].astype(str),
+            "매출액(+)": f_sales["합계"],
+            "지출액(-)": 0,
+            "결제/수금 상태": f_sales["결제방식"].astype(str) + " (" + f_sales["수금상태"].astype(str) + ")",
+            "비고": ""
+        })
+
+    t_exp = pd.DataFrame()
+    if not f_exp.empty:
+        t_exp = pd.DataFrame({
+            "날짜": f_exp["지출 일자"],
+            "구분": "🔴 지출",
+            "거래처/지출처": f_exp["지출처"],
+            "상세 내용 (경로/항목)": f_exp["지출 항목"],
+            "매출액(+)": 0,
+            "지출액(-)": f_exp["금액"],
+            "결제/수금 상태": "-",
+            "비고": f_exp["비고"].fillna("").astype(str)
+        })
+
+    # 두 장부를 하나로 묶고 날짜 역순(최신순)으로 정렬
+    if not t_sales.empty or not t_exp.empty:
+        df_total = pd.concat([t_sales, t_exp], ignore_index=True)
+        df_total = df_total.sort_values(by="날짜", ascending=False)
+        
+        # 금액에 자동으로 콤마(,)가 찍히도록 포맷 설정하여 하나의 표로 출력
+        st.dataframe(
+            df_total, 
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "매출액(+)": st.column_config.NumberColumn(format="%d원"),
+                "지출액(-)": st.column_config.NumberColumn(format="%d원")
+            }
+        )
+    else:
+        st.info("선택하신 기간 내에 입출금 내역이 없습니다.")
