@@ -64,7 +64,8 @@ if check_password():
 
     # --- [자동 계산용 콜백 함수] ---
     def update_sales_tax():
-        st.session_state.s_tax_val = int(st.session_state.s_sup_val * 0.1)
+        # 세액은 운임료의 10%로 자동 계산되도록 설정합니다.
+        st.session_state.s_tax_val = int(st.session_state.s_fare_val * 0.1)
 
     # --- [데이터 로드 함수] ---
     def load_data(sheet_name):
@@ -77,6 +78,12 @@ if check_password():
             if date_col in df.columns:
                 df[date_col] = pd.to_datetime(df[date_col], errors='coerce').dt.date
                 df = df.dropna(subset=[date_col])
+            
+            # 숫자 데이터 포맷팅 안전하게 변환
+            num_cols = ['운임료', '수수료', '세액', '합계', '입금액', '미수금'] if sheet_name == "매출" else ['금액']
+            for col in num_cols:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
             return df
         except:
             return pd.DataFrame()
@@ -91,17 +98,26 @@ if check_password():
         st.sidebar.header("➕ 신규 매출 등록")
         s_date = st.sidebar.date_input("운송 일자", date.today())
         s_client = st.sidebar.text_input("거래처명")
-        s_origin = st.sidebar.text_input("출발지 (시/군/구 단위 등)")
-        s_dest = st.sidebar.text_input("도착지 (시/군/구 단위 등)")
         
-        s_supply = st.sidebar.number_input("공급가액", min_value=0, key="s_sup_val", on_change=update_sales_tax)
+        # 3. 운송 출발지와 도착지 입력칸 추가
+        s_origin = st.sidebar.text_input("출발지 (상세 경로)")
+        s_dest = st.sidebar.text_input("도착지 (상세 경로)")
+        
+        # 매출 세부 금액 입력 (운임료 입력 시 세액 자동 연동)
+        s_fare = st.sidebar.number_input("운임료", min_value=0, value=0, key="s_fare_val", on_change=update_sales_tax)
+        s_fee = st.sidebar.number_input("수수료", min_value=0, value=0, key="s_fee_val")
         
         if 's_tax_val' not in st.session_state:
             st.session_state.s_tax_val = 0
         s_tax = st.sidebar.number_input("세액 (자동)", min_value=0, key="s_tax_val")
         
-        s_total = s_supply + s_tax
-        st.sidebar.number_input("합계 금액 (자동)", value=s_total, disabled=True)
+        # 공식 적용: 매출 합계 = 운임료 - 수수료 + 세액
+        s_total = s_fare - s_fee + s_tax
+        st.sidebar.number_input("매출 합계 (자동)", value=s_total, disabled=True)
+        
+        # 4. 결제방식 선택 추가
+        s_pmethod = st.sidebar.selectbox("결제방식", ["이체", "현금", "전자세금계산서", "카드"])
+        
         s_status = st.sidebar.selectbox("수금상태", ["미입금", "일부입금", "완납"])
         s_dep = s_total if s_status == "완납" else (0 if s_status == "미입금" else st.sidebar.number_input("입금액", min_value=0, max_value=s_total))
 
@@ -112,9 +128,11 @@ if check_password():
                     "거래처": s_client, 
                     "출발지": s_origin,
                     "도착지": s_dest,
-                    "공급가액": int(s_supply), 
+                    "운임료": int(s_fare),
+                    "수수료": int(s_fee),
                     "세액": int(s_tax), 
                     "합계": int(s_total), 
+                    "결제방식": s_pmethod,
                     "수금상태": s_status, 
                     "입금액": int(s_dep), 
                     "미수금": int(s_total - s_dep)
@@ -122,12 +140,9 @@ if check_password():
                 conn.update(worksheet="매출", data=pd.concat([df_sales, new_s], ignore_index=True))
                 st.sidebar.success("✅ 매출 저장 완료!")
                 st.rerun()
-            elif not s_client:
-                st.sidebar.warning("⚠️ 거래처명을 입력해 주세요.")
-            elif not s_origin:
-                st.sidebar.warning("⚠️ 출발지를 입력해 주세요.")
-            elif not s_dest:
-                st.sidebar.warning("⚠️ 도착지를 입력해 주세요.")
+            elif not s_client: st.sidebar.warning("⚠️ 거래처명을 입력해 주세요.")
+            elif not s_origin: st.sidebar.warning("⚠️ 출발지를 입력해 주세요.")
+            elif not s_dest: st.sidebar.warning("⚠️ 도착지를 입력해 주세요.")
 
     else:
         st.sidebar.header("💸 신규 지출 등록")
@@ -149,12 +164,10 @@ if check_password():
     # --- [메인 화면: 대시보드] ---
     st.subheader("📈 통합 현황 요약")
     
-    # 레이아웃 조정: 기간 선택 창이 화면 왼쪽 절반을 이쁘게 채우도록 설정
     col_date, _ = st.columns([1, 1])
     with col_date:
         date_range = st.date_input("조회 기간", [date.today().replace(day=1), date.today()])
     
-    # [안전장치] 시작일만 선택하고 종료일은 고르는 중일 때 프로그램이 멈추지 않도록 방어합니다.
     if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
         start_d, end_d = date_range
     else:
@@ -164,19 +177,21 @@ if check_password():
     f_sales = df_sales[(df_sales['운송 일자'] >= start_d) & (df_sales['운송 일자'] <= end_d)] if not df_sales.empty else pd.DataFrame()
     f_exp = df_exp[(df_exp['지출 일자'] >= start_d) & (df_exp['지출 일자'] <= end_d)] if not df_exp.empty else pd.DataFrame()
 
+    # 1, 2. 금액 계산 및 새로운 수익 공식 적용 대시보드 표시
     total_s = int(f_sales['합계'].sum()) if not f_sales.empty else 0
     total_e = int(f_exp['금액'].sum()) if not f_exp.empty else 0
-    profit = total_s - total_e
+    profit = total_s - total_e # 매출 합계(운임료-수수료+세액) - 지출 합계(연료비+통행료+기타)
 
     m1, m2, m3 = st.columns(3)
-    m1.metric("총 매출액", f"{total_s:,}원")
-    m2.metric("총 지출액", f"{total_e:,}원")
-    m3.metric("순이익 (매출-지출)", f"{profit:,}원", delta=f"{profit:,}원")
+    m1.metric("총 매출액 (운임-수수료+세액)", f"{total_s:,}원")
+    m2.metric("총 지출액 (연료비+통행료+기타)", f"{total_e:,}원")
+    m3.metric("순수익 (매출 - 지출)", f"{profit:,}원", delta=f"{profit:,}원")
 
     tab1, tab2 = st.tabs(["🚛 매출 내역", "💰 지출 내역"])
     
     with tab1:
         if not f_sales.empty:
+            # 새 컬럼들이 포함된 매출 내역 테이블을 보여줍니다.
             st.dataframe(f_sales.sort_values("운송 일자", ascending=False), use_container_width=True, hide_index=True)
         else:
             st.info("기간 내 매출 내역이 없습니다.")
