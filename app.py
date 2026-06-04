@@ -67,6 +67,10 @@ if check_password():
             if df is None or df.empty:
                 return pd.DataFrame()
             df = df.copy()
+            
+            # 중요: 구글 시트의 실제 행 위치를 추적하기 위해 원본 인덱스를 기록해둡니다.
+            df['원본인덱스'] = df.index 
+            
             date_col = "운송 일자" if sheet_name == "매출" else "지출 일자"
             if date_col in df.columns:
                 df[date_col] = pd.to_datetime(df[date_col], errors='coerce').dt.date
@@ -94,20 +98,17 @@ if check_password():
         s_origin = st.text_input("출발지", key="side_s_ori")
         s_dest = st.text_input("도착지", key="side_s_des")
         
-        # 💡 요청하신 계산 순서 레이아웃 배치 및 자동 실시간 연동 보완
         s_fare = st.number_input("운임료", min_value=0, value=0, key="s_fare_val", on_change=update_sales_tax)
         
         if 's_tax_val' not in st.session_state:
             st.session_state.s_tax_val = 0
         s_tax = st.number_input("세액 (자동)", min_value=0, key="s_tax_val")
         
-        # 1. 매출 합계 실시간 계산 (운임료 + 세액) -> 버그 방지를 위해 key 제거
         s_subtotal = s_fare + s_tax
         st.number_input("매출 합계 (자동)", value=s_subtotal, disabled=True)
         
         s_fee = st.number_input("수수료", min_value=0, value=0, key="side_s_fee")
         
-        # 2. 최종 금액 실시간 계산 (매출 합계 - 수수료) -> 버그 방지를 위해 key 제거
         s_final = s_subtotal - s_fee
         st.number_input("최종 금액 (자동)", value=s_final, disabled=True)
         
@@ -125,13 +126,14 @@ if check_password():
                     "운임료": int(s_fare),
                     "수수료": int(s_fee),
                     "세액": int(s_tax), 
-                    "합계": int(s_final), # 대시보드 수익 계산을 위해 최종 금액을 '합계' 컬럼에 보관합니다.
+                    "합계": int(s_final), 
                     "결제방식": s_pmethod,
                     "수금상태": s_status, 
                     "입금액": int(s_dep), 
                     "미수금": int(s_final - s_dep)
                 }])
-                conn.update(worksheet="매출", data=pd.concat([df_sales, new_s], ignore_index=True))
+                df_raw_sales = conn.read(worksheet="매출", ttl="0")
+                conn.update(worksheet="매출", data=pd.concat([df_raw_sales, new_s], ignore_index=True))
                 st.success("✅ 매출 저장 완료!")
                 st.rerun()
             elif not s_client: st.warning("⚠️ 거래처명을 입력해 주세요.")
@@ -151,7 +153,8 @@ if check_password():
         if st.button("💾 지출 저장하기", use_container_width=True, key="btn_e_save"):
             if e_amount > 0 and e_vendor:
                 new_e = pd.DataFrame([{"지출 일자": e_date.strftime('%Y-%m-%d'), "지출 항목": e_category, "지출처": e_vendor, "금액": e_amount, "비고": e_memo}])
-                conn.update(worksheet="지출", data=pd.concat([df_exp, new_e], ignore_index=True))
+                df_raw_exp = conn.read(worksheet="지출", ttl="0")
+                conn.update(worksheet="지출", data=pd.concat([df_raw_exp, new_e], ignore_index=True))
                 st.success("✅ 지출 저장 완료!")
                 st.rerun()
             elif not e_vendor:
@@ -179,7 +182,7 @@ if check_password():
     f_sales = df_sales[(df_sales['운송 일자'] >= start_d) & (df_sales['운송 일자'] <= end_d)] if not df_sales.empty else pd.DataFrame()
     f_exp = df_exp[(df_exp['지출 일자'] >= start_d) & (df_exp['지출 일자'] <= end_d)] if not df_exp.empty else pd.DataFrame()
 
-    # 금액 계산 및 수익 공식 적용 (최종 금액 - 지출)
+    # 금액 계산 및 수익 공식 적용
     total_s = int(f_sales['합계'].sum()) if not f_sales.empty else 0
     total_e = int(f_exp['금액'].sum()) if not f_exp.empty else 0
     profit = total_s - total_e
@@ -196,6 +199,7 @@ if check_password():
     t_sales = pd.DataFrame()
     if not f_sales.empty:
         t_sales = pd.DataFrame({
+            "원본인덱스": f_sales["원본인덱스"],
             "날짜": f_sales["운송 일자"],
             "구분": "🟢 매출",
             "거래처/지출처": f_sales["거래처"],
@@ -209,6 +213,7 @@ if check_password():
     t_exp = pd.DataFrame()
     if not f_exp.empty:
         t_exp = pd.DataFrame({
+            "원본인덱스": f_exp["원본인덱스"],
             "날짜": f_exp["지출 일자"],
             "구분": "🔴 지출",
             "거래처/지출처": f_exp["지출처"],
@@ -221,10 +226,16 @@ if check_password():
 
     if not t_sales.empty or not t_exp.empty:
         df_total = pd.concat([t_sales, t_exp], ignore_index=True)
-        df_total = df_total.sort_values(by="날짜", ascending=False)
+        df_total = df_total.sort_values(by="날짜", ascending=False).reset_index(drop=True)
+        
+        # 유저가 식별하기 좋은 순번 가동
+        df_total.insert(0, '번호', range(1, len(df_total) + 1))
+        
+        # 구글 시트 백엔드 주소용 컬럼은 화면에서 숨깁니다.
+        df_display = df_total.drop(columns=["원본인덱스"])
         
         st.dataframe(
-            df_total, 
+            df_display, 
             use_container_width=True, 
             hide_index=True,
             column_config={
@@ -232,5 +243,30 @@ if check_password():
                 "지출액(-)": st.column_config.NumberColumn(format="%d원")
             }
         )
+        
+        # 💡 [새로운 기능] 통합 장부 바로 아래에 삭제 관리자 창 개설
+        st.write("")
+        with st.expander("🗑️ 장부 내역 삭제 관리"):
+            delete_no = st.selectbox("삭제할 내역의 [번호]를 선택하세요", options=df_total['번호'].tolist(), key="del_select")
+            selected_row = df_total[df_total['번호'] == delete_no].iloc[0]
+            
+            st.markdown(f"**선택된 내역 확인:**")
+            st.warning(f"📌 [{selected_row['구분']}] {selected_row['날짜']} | {selected_row['거래처/지출처']} | {selected_row['상세 내용 (경로/항목)']}")
+            
+            if st.button("❌ 선택한 내역 완전히 삭제하기", type="primary", use_container_width=True):
+                orig_idx = selected_row['원본인덱스']
+                
+                if selected_row['구분'] == "🟢 매출":
+                    df_raw = conn.read(worksheet="매출", ttl="0")
+                    df_clean = df_raw.drop(int(orig_idx)).reset_index(drop=True)
+                    conn.update(worksheet="매출", data=df_clean)
+                    st.success("✅ 해당 매출 내역이 정상적으로 삭제되었습니다.")
+                else:
+                    df_raw = conn.read(worksheet="지출", ttl="0")
+                    df_clean = df_raw.drop(int(orig_idx)).reset_index(drop=True)
+                    conn.update(worksheet="지출", data=df_clean)
+                    st.success("✅ 해당 지출 내역이 정상적으로 삭제되었습니다.")
+                
+                st.rerun()
     else:
         st.info("선택하신 기간 내에 입출금 내역이 없습니다.")
