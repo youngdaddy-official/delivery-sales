@@ -56,9 +56,19 @@ if check_password():
     # 2. 구글 시트 연결
     conn = st.connection("gsheets", type=GSheetsConnection)
 
-    # --- [자동 계산용 콜백 함수] ---
-    def update_sales_tax():
-        st.session_state.s_tax_val = int(st.session_state.s_fare_val * 0.1)
+    # --- [콤마가 포함된 문자열을 숫자로 변환하는 함수] ---
+    def parse_money(val_str):
+        cleaned = str(val_str).replace(",", "").replace("원", "").strip()
+        try:
+            return int(cleaned)
+        except ValueError:
+            return 0
+
+    # --- [입력 데이터 초기 설정 메모리] ---
+    if 's_fare_val' not in st.session_state: st.session_state.s_fare_val = 0
+    if 'side_s_fee' not in st.session_state: st.session_state.side_s_fee = 0
+    if 'side_s_dep' not in st.session_state: st.session_state.side_s_dep = 0
+    if 'side_e_amo' not in st.session_state: st.session_state.side_e_amo = 0
 
     # --- [데이터 로드 함수] ---
     def load_data(sheet_name):
@@ -67,8 +77,6 @@ if check_password():
             if df is None or df.empty:
                 return pd.DataFrame()
             df = df.copy()
-            
-            # 구글 시트의 실제 행 위치를 추적하기 위해 원본 인덱스를 기록해둡니다.
             df['원본인덱스'] = df.index 
             
             date_col = "운송 일자" if sheet_name == "매출" else "지출 일자"
@@ -98,23 +106,39 @@ if check_password():
         s_origin = st.text_input("출발지", key="side_s_ori")
         s_dest = st.text_input("도착지", key="side_s_des")
         
-        s_fare = st.number_input("운임료", min_value=0, value=0, key="s_fare_val", on_change=update_sales_tax)
+        # 💡 천 단위 콤마가 실시간으로 입력창에 적용되는 로직
+        s_fare_input = st.text_input("운임료", value=f"{st.session_state.s_fare_val:,}")
+        s_fare = parse_money(s_fare_input)
+        st.session_state.s_fare_val = s_fare
         
-        if 's_tax_val' not in st.session_state:
-            st.session_state.s_tax_val = 0
-        s_tax = st.number_input("세액 (자동)", min_value=0, key="s_tax_val")
+        s_tax = int(s_fare * 0.1)
+        st.text_input("세액 (자동)", value=f"{s_tax:,}", disabled=True)
         
         s_subtotal = s_fare + s_tax
-        st.number_input("매출 합계 (자동)", value=s_subtotal, disabled=True)
+        st.text_input("매출 합계 (자동)", value=f"{s_subtotal:,}", disabled=True)
         
-        s_fee = st.number_input("수수료", min_value=0, value=0, key="side_s_fee")
+        s_fee_input = st.text_input("수수료", value=f"{st.session_state.side_s_fee:,}")
+        s_fee = parse_money(s_fee_input)
+        st.session_state.side_s_fee = s_fee
         
         s_final = s_subtotal - s_fee
-        st.number_input("최종 금액 (자동)", value=s_final, disabled=True)
+        st.text_input("최종 금액 (자동)", value=f"{s_final:,}", disabled=True)
         
         s_pmethod = st.selectbox("결제방식", ["이체", "현금", "전자세금계산서", "카드"], key="side_s_pm")
         s_status = st.selectbox("수금상태", ["미입금", "일부입금", "완납"], key="side_s_st")
-        s_dep = s_final if s_status == "완납" else (0 if s_status == "미입금" else st.number_input("입금액", min_value=0, max_value=s_final, key="side_s_dep"))
+        
+        if s_status == "완납":
+            s_dep = s_final
+            st.text_input("입금액", value=f"{s_dep:,}", disabled=True)
+        elif s_status == "미입금":
+            s_dep = 0
+            st.text_input("입금액", value="0", disabled=True)
+        else:
+            s_dep_input = st.text_input("입금액", value=f"{st.session_state.side_s_dep:,}")
+            s_dep = parse_money(s_dep_input)
+            if s_dep > s_final:
+                s_dep = s_final
+            st.session_state.side_s_dep = s_dep
 
         if st.button("💾 매출 저장하기", use_container_width=True, key="btn_s_save"):
             if s_client and s_origin and s_dest:
@@ -134,6 +158,12 @@ if check_password():
                 }])
                 df_raw_sales = conn.read(worksheet="매출", ttl="0")
                 conn.update(worksheet="매출", data=pd.concat([df_raw_sales, new_s], ignore_index=True))
+                
+                # 저장 완료 후 입력값 다음 입력 위해 0으로 자동 청소
+                st.session_state.s_fare_val = 0
+                st.session_state.side_s_fee = 0
+                st.session_state.side_s_dep = 0
+                
                 st.success("✅ 매출 저장 완료!")
                 st.rerun()
             elif not s_client: st.warning("⚠️ 거래처명을 입력해 주세요.")
@@ -147,7 +177,12 @@ if check_password():
         e_date = st.date_input("지출 일자", date.today(), key="side_e_date")
         e_category = st.selectbox("지출 항목", ["연료비", "통행료", "기타"], key="side_e_cat")
         e_vendor = st.text_input("지출처", key="side_e_ven")
-        e_amount = st.number_input("지출 금액", min_value=0, value=0, key="side_e_amo")
+        
+        # 💡 지출 금액 입력창 천 단위 콤마 자동 포맷팅 적용
+        e_amount_input = st.text_input("지출 금액", value=f"{st.session_state.side_e_amo:,}")
+        e_amount = parse_money(e_amount_input)
+        st.session_state.side_e_amo = e_amount
+        
         e_memo = st.text_input("비고 (선택)", key="side_e_mem")
 
         if st.button("💾 지출 저장하기", use_container_width=True, key="btn_e_save"):
@@ -155,6 +190,10 @@ if check_password():
                 new_e = pd.DataFrame([{"지출 일자": e_date.strftime('%Y-%m-%d'), "지출 항목": e_category, "지출처": e_vendor, "금액": e_amount, "비고": e_memo}])
                 df_raw_exp = conn.read(worksheet="지출", ttl="0")
                 conn.update(worksheet="지출", data=pd.concat([df_raw_exp, new_e], ignore_index=True))
+                
+                # 저장 완료 후 지출 입력값 다음 입력 위해 0으로 자동 청소
+                st.session_state.side_e_amo = 0
+                
                 st.success("✅ 지출 저장 완료!")
                 st.rerun()
             elif not e_vendor:
@@ -228,7 +267,6 @@ if check_password():
         df_total = pd.concat([t_sales, t_exp], ignore_index=True)
         df_total = df_total.sort_values(by="날짜", ascending=False).reset_index(drop=True)
         
-        # 💡 [핵심 수정] 한 줄씩 표 형식으로 그려내어 우측 끝에 버튼 배치
         # 표 헤더 생성 (가로 비율 지정)
         grid_widths = [1.2, 0.8, 1.5, 2.0, 1.2, 1.2, 1.8, 1.5, 0.6]
         headers = ["날짜", "구분", "거래처/지출처", "상세 내용 (경로/항목)", "매출액(+)", "지출액(-)", "결제/수금 상태", "비고", "삭제"]
@@ -251,7 +289,6 @@ if check_password():
             col_row[6].write(row["결제/수금 상태"])
             col_row[7].write(row["비고"] if row["비고"] != "" else "-")
             
-            # 비고 옆의 마지막 칸에 삭제 아이콘 버튼 생성
             if col_row[8].button("🗑️", key=f"del_{idx}_{row['원본인덱스']}", type="primary", help="해당 내역 삭제"):
                 orig_idx = row['원본인덱스']
                 
@@ -264,6 +301,7 @@ if check_password():
                     df_clean = df_raw.drop(int(orig_idx)).reset_index(drop=True)
                     conn.update(worksheet="지출", data=df_clean)
                 
+                st.clear_caches()
                 st.rerun()
             st.markdown("<hr style='margin: 0.3rem 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
     else:
