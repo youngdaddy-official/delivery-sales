@@ -83,7 +83,7 @@ if check_password():
     df_sales = load_data("매출")
     df_exp = load_data("지출")
 
-    # --- [사이드바: 왼쪽 기존 부분으로 모든 입력 메뉴 통합] ---
+    # --- [사이드바: 왼쪽 입력 메뉴] ---
     with st.sidebar:
         st.header("📝 신규 내역 등록")
         
@@ -94,23 +94,44 @@ if check_password():
         s_origin = st.text_input("출발지", key="side_s_ori")
         s_dest = st.text_input("도착지", key="side_s_des")
         
+        # --- 요청하신 계산 순서 레이아웃 배치 ---
         s_fare = st.number_input("운임료", min_value=0, value=0, key="s_fare_val", on_change=update_sales_tax)
-        s_fee = st.number_input("수수료", min_value=0, value=0, key="side_s_fee")
         
         if 's_tax_val' not in st.session_state:
             st.session_state.s_tax_val = 0
         s_tax = st.number_input("세액 (자동)", min_value=0, key="s_tax_val")
         
-        s_total = s_fare - s_fee + s_tax
-        st.number_input("매출 합계 (자동)", value=s_total, disabled=True, key="side_s_total")
+        # 실시간 매출 합계 계산 (운임료 + 세액)
+        s_subtotal = s_fare + s_tax
+        st.number_input("매출 합계 (자동)", value=s_subtotal, disabled=True, key="side_s_subtotal")
+        
+        s_fee = st.number_input("수수료", min_value=0, value=0, key="side_s_fee")
+        
+        # 실시간 최종 금액 계산 (매출 합계 - 수수료)
+        s_final = s_subtotal - s_fee
+        st.number_input("최종 금액 (자동)", value=s_final, disabled=True, key="side_s_final")
+        # ----------------------------------------
         
         s_pmethod = st.selectbox("결제방식", ["이체", "현금", "전자세금계산서", "카드"], key="side_s_pm")
         s_status = st.selectbox("수금상태", ["미입금", "일부입금", "완납"], key="side_s_st")
-        s_dep = s_total if s_status == "완납" else (0 if s_status == "미입금" else st.number_input("입금액", min_value=0, max_value=s_total, key="side_s_dep"))
+        s_dep = s_final if s_status == "완납" else (0 if s_status == "미입금" else st.number_input("입금액", min_value=0, max_value=s_final, key="side_s_dep"))
 
         if st.button("💾 매출 저장하기", use_container_width=True, key="btn_s_save"):
             if s_client and s_origin and s_dest:
-                new_s = pd.DataFrame([{"운송 일자": s_date.strftime('%Y-%m-%d'), "거래처": s_client, "출발지": s_origin, "도착지": s_dest, "운임료": int(s_fare), "수수료": int(s_fee), "세액": int(s_tax), "합계": int(s_total), "결제방식": s_pmethod, "수금상태": s_status, "입금액": int(s_dep), "미수금": int(s_total - s_dep)}])
+                new_s = pd.DataFrame([{
+                    "운송 일자": s_date.strftime('%Y-%m-%d'), 
+                    "거래처": s_client, 
+                    "출발지": s_origin,
+                    "도착지": s_dest,
+                    "운임료": int(s_fare),
+                    "수수료": int(s_fee),
+                    "세액": int(s_tax), 
+                    "합계": int(s_final), # 손익공식을 위해 최종 금액을 구글 시트의 '합계' 컬럼에 보관합니다.
+                    "결제방식": s_pmethod,
+                    "수금상태": s_status, 
+                    "입금액": int(s_dep), 
+                    "미수금": int(s_final - s_dep)
+                }])
                 conn.update(worksheet="매출", data=pd.concat([df_sales, new_s], ignore_index=True))
                 st.success("✅ 매출 저장 완료!")
                 st.rerun()
@@ -138,7 +159,6 @@ if check_password():
                 st.error("⚠️ 지출처를 입력해 주세요.")
 
         st.markdown("---")
-        # 로그아웃 버튼 최하단 배치
         if st.button("🚪 로그아웃", use_container_width=True):
             st.session_state["password_correct"] = False
             st.rerun()
@@ -160,7 +180,7 @@ if check_password():
     f_sales = df_sales[(df_sales['운송 일자'] >= start_d) & (df_sales['운송 일자'] <= end_d)] if not df_sales.empty else pd.DataFrame()
     f_exp = df_exp[(df_exp['지출 일자'] >= start_d) & (df_exp['지출 일자'] <= end_d)] if not df_exp.empty else pd.DataFrame()
 
-    # 금액 계산 및 수익 공식 적용
+    # 금액 계산 및 수익 공식 적용 (최종 금액 - 지출)
     total_s = int(f_sales['합계'].sum()) if not f_sales.empty else 0
     total_e = int(f_exp['금액'].sum()) if not f_exp.empty else 0
     profit = total_s - total_e
@@ -200,7 +220,6 @@ if check_password():
             "비고": f_exp["비고"].fillna("").astype(str)
         })
 
-    # 두 장부를 하나로 묶고 날짜 최신순으로 정렬
     if not t_sales.empty or not t_exp.empty:
         df_total = pd.concat([t_sales, t_exp], ignore_index=True)
         df_total = df_total.sort_values(by="날짜", ascending=False)
