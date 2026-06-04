@@ -106,7 +106,6 @@ if check_password():
         s_origin = st.text_input("출발지", key="side_s_ori")
         s_dest = st.text_input("도착지", key="side_s_des")
         
-        # 💡 천 단위 콤마가 실시간으로 입력창에 적용되는 로직
         s_fare_input = st.text_input("운임료", value=f"{st.session_state.s_fare_val:,}")
         s_fare = parse_money(s_fare_input)
         st.session_state.s_fare_val = s_fare
@@ -159,7 +158,6 @@ if check_password():
                 df_raw_sales = conn.read(worksheet="매출", ttl="0")
                 conn.update(worksheet="매출", data=pd.concat([df_raw_sales, new_s], ignore_index=True))
                 
-                # 저장 완료 후 입력값 다음 입력 위해 0으로 자동 청소
                 st.session_state.s_fare_val = 0
                 st.session_state.side_s_fee = 0
                 st.session_state.side_s_dep = 0
@@ -170,7 +168,7 @@ if check_password():
             elif not s_origin: st.warning("⚠️ 출발지를 입력해 주세요.")
             elif not s_dest: st.warning("⚠️ 도착지를 입력해 주세요.")
 
-        st.markdown("---") # 매출과 지출 구분선
+        st.markdown("---") 
         
         # [구역 2] 지출 등록 입력창
         st.subheader("🔴 신규 지출 등록")
@@ -178,7 +176,6 @@ if check_password():
         e_category = st.selectbox("지출 항목", ["연료비", "통행료", "기타"], key="side_e_cat")
         e_vendor = st.text_input("지출처", key="side_e_ven")
         
-        # 💡 지출 금액 입력창 천 단위 콤마 자동 포맷팅 적용
         e_amount_input = st.text_input("지출 금액", value=f"{st.session_state.side_e_amo:,}")
         e_amount = parse_money(e_amount_input)
         st.session_state.side_e_amo = e_amount
@@ -191,7 +188,6 @@ if check_password():
                 df_raw_exp = conn.read(worksheet="지출", ttl="0")
                 conn.update(worksheet="지출", data=pd.concat([df_raw_exp, new_e], ignore_index=True))
                 
-                # 저장 완료 후 지출 입력값 다음 입력 위해 0으로 자동 청소
                 st.session_state.side_e_amo = 0
                 
                 st.success("✅ 지출 저장 완료!")
@@ -219,90 +215,4 @@ if check_password():
 
     # 데이터 필터링
     f_sales = df_sales[(df_sales['운송 일자'] >= start_d) & (df_sales['운송 일자'] <= end_d)] if not df_sales.empty else pd.DataFrame()
-    f_exp = df_exp[(df_exp['지출 일자'] >= start_d) & (df_exp['지출 일자'] <= end_d)] if not df_exp.empty else pd.DataFrame()
-
-    # 금액 계산 및 수익 공식 적용
-    total_s = int(f_sales['합계'].sum()) if not f_sales.empty else 0
-    total_e = int(f_exp['금액'].sum()) if not f_exp.empty else 0
-    profit = total_s - total_e
-
-    m1, m2, m3 = st.columns(3)
-    m1.metric("총 매출액 (운임-수수료+세액)", f"{total_s:,}원")
-    m2.metric("총 지출액 (연료비+통행료+기타)", f"{total_e:,}원")
-    m3.metric("순수익 (매출 - 지출)", f"{profit:,}원", delta=f"{profit:,}원")
-
-    st.divider()
-    st.subheader("📝 통합 입출금 장부")
-
-    # --- 매출과 지출 데이터 하나로 합치기 로직 ---
-    t_sales = pd.DataFrame()
-    if not f_sales.empty:
-        t_sales = pd.DataFrame({
-            "원본인덱스": f_sales["원본인덱스"],
-            "날짜": f_sales["운송 일자"],
-            "구분": "🟢 매출",
-            "거래처/지출처": f_sales["거래처"],
-            "상세 내용 (경로/항목)": f_sales["출발지"].astype(str) + " ➡️ " + f_sales["도착지"].astype(str),
-            "매출액(+)": f_sales["합계"],
-            "지출액(-)": 0,
-            "결제/수금 상태": f_sales["결제방식"].astype(str) + " (" + f_sales["수금상태"].astype(str) + ")",
-            "비고": ""
-        })
-
-    t_exp = pd.DataFrame()
-    if not f_exp.empty:
-        t_exp = pd.DataFrame({
-            "원본인덱스": f_exp["원본인덱스"],
-            "날짜": f_exp["지출 일자"],
-            "구분": "🔴 지출",
-            "거래처/지출처": f_exp["지출처"],
-            "상세 내용 (경로/항목)": f_exp["지출 항목"],
-            "매출액(+)": 0,
-            "지출액(-)": f_exp["금액"],
-            "결제/수금 상태": "-",
-            "비고": f_exp["비고"].fillna("").astype(str)
-        })
-
-    if not t_sales.empty or not t_exp.empty:
-        df_total = pd.concat([t_sales, t_exp], ignore_index=True)
-        df_total = df_total.sort_values(by="날짜", ascending=False).reset_index(drop=True)
-        
-        # 표 헤더 생성 (가로 비율 지정)
-        grid_widths = [1.2, 0.8, 1.5, 2.0, 1.2, 1.2, 1.8, 1.5, 0.6]
-        headers = ["날짜", "구분", "거래처/지출처", "상세 내용 (경로/항목)", "매출액(+)", "지출액(-)", "결제/수금 상태", "비고", "삭제"]
-        
-        col_header = st.columns(grid_widths)
-        for col, title in zip(col_header, headers):
-            col.markdown(f"**{title}**")
-        st.markdown("<hr style='margin: 0.5rem 0; border-top: 2px solid #ccc;'>", unsafe_allow_html=True)
-        
-        # 데이터 행 출력 진행
-        for idx, row in df_total.iterrows():
-            col_row = st.columns(grid_widths)
-            
-            col_row[0].write(str(row["날짜"]))
-            col_row[1].write(row["구분"])
-            col_row[2].write(row["거래처/지출처"])
-            col_row[3].write(row["상세 내용 (경로/항목)"])
-            col_row[4].write(f"{row['매출액(+)']:,}원")
-            col_row[5].write(f"{row['지출액(-)']:,}원")
-            col_row[6].write(row["결제/수금 상태"])
-            col_row[7].write(row["비고"] if row["비고"] != "" else "-")
-            
-            if col_row[8].button("🗑️", key=f"del_{idx}_{row['원본인덱스']}", type="primary", help="해당 내역 삭제"):
-                orig_idx = row['원본인덱스']
-                
-                if row['구분'] == "🟢 매출":
-                    df_raw = conn.read(worksheet="매출", ttl="0")
-                    df_clean = df_raw.drop(int(orig_idx)).reset_index(drop=True)
-                    conn.update(worksheet="매출", data=df_clean)
-                else:
-                    df_raw = conn.read(worksheet="지출", ttl="0")
-                    df_clean = df_raw.drop(int(orig_idx)).reset_index(drop=True)
-                    conn.update(worksheet="지출", data=df_clean)
-                
-                st.clear_caches()
-                st.rerun()
-            st.markdown("<hr style='margin: 0.3rem 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
-    else:
-        st.info("선택하신 기간 내에 입출금 내역이 없습니다.")
+    f_exp = df_exp
