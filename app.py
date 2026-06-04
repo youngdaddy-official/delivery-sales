@@ -68,7 +68,7 @@ if check_password():
                 return pd.DataFrame()
             df = df.copy()
             
-            # 중요: 구글 시트의 실제 행 위치를 추적하기 위해 원본 인덱스를 기록해둡니다.
+            # 구글 시트의 실제 행 위치를 추적하기 위해 원본 인덱스를 기록해둡니다.
             df['원본인덱스'] = df.index 
             
             date_col = "운송 일자" if sheet_name == "매출" else "지출 일자"
@@ -228,45 +228,43 @@ if check_password():
         df_total = pd.concat([t_sales, t_exp], ignore_index=True)
         df_total = df_total.sort_values(by="날짜", ascending=False).reset_index(drop=True)
         
-        # 유저가 식별하기 좋은 순번 가동
-        df_total.insert(0, '번호', range(1, len(df_total) + 1))
+        # 💡 [핵심 수정] 한 줄씩 표 형식으로 그려내어 우측 끝에 버튼 배치
+        # 표 헤더 생성 (가로 비율 지정)
+        grid_widths = [1.2, 0.8, 1.5, 2.0, 1.2, 1.2, 1.8, 1.5, 0.6]
+        headers = ["날짜", "구분", "거래처/지출처", "상세 내용 (경로/항목)", "매출액(+)", "지출액(-)", "결제/수금 상태", "비고", "삭제"]
         
-        # 구글 시트 백엔드 주소용 컬럼은 화면에서 숨깁니다.
-        df_display = df_total.drop(columns=["원본인덱스"])
+        col_header = st.columns(grid_widths)
+        for col, title in zip(col_header, headers):
+            col.markdown(f"**{title}**")
+        st.markdown("<hr style='margin: 0.5rem 0; border-top: 2px solid #ccc;'>", unsafe_allow_html=True)
         
-        st.dataframe(
-            df_display, 
-            use_container_width=True, 
-            hide_index=True,
-            column_config={
-                "매출액(+)": st.column_config.NumberColumn(format="%d원"),
-                "지출액(-)": st.column_config.NumberColumn(format="%d원")
-            }
-        )
-        
-        # 💡 [새로운 기능] 통합 장부 바로 아래에 삭제 관리자 창 개설
-        st.write("")
-        with st.expander("🗑️ 장부 내역 삭제 관리"):
-            delete_no = st.selectbox("삭제할 내역의 [번호]를 선택하세요", options=df_total['번호'].tolist(), key="del_select")
-            selected_row = df_total[df_total['번호'] == delete_no].iloc[0]
+        # 데이터 행 출력 진행
+        for idx, row in df_total.iterrows():
+            col_row = st.columns(grid_widths)
             
-            st.markdown(f"**선택된 내역 확인:**")
-            st.warning(f"📌 [{selected_row['구분']}] {selected_row['날짜']} | {selected_row['거래처/지출처']} | {selected_row['상세 내용 (경로/항목)']}")
+            col_row[0].write(str(row["날짜"]))
+            col_row[1].write(row["구분"])
+            col_row[2].write(row["거래처/지출처"])
+            col_row[3].write(row["상세 내용 (경로/항목)"])
+            col_row[4].write(f"{row['매출액(+)']:,}원")
+            col_row[5].write(f"{row['지출액(-)']:,}원")
+            col_row[6].write(row["결제/수금 상태"])
+            col_row[7].write(row["비고"] if row["비고"] != "" else "-")
             
-            if st.button("❌ 선택한 내역 완전히 삭제하기", type="primary", use_container_width=True):
-                orig_idx = selected_row['원본인덱스']
+            # 비고 옆의 마지막 칸에 삭제 아이콘 버튼 생성
+            if col_row[8].button("🗑️", key=f"del_{idx}_{row['원본인덱스']}", type="primary", help="해당 내역 삭제"):
+                orig_idx = row['원본인덱스']
                 
-                if selected_row['구분'] == "🟢 매출":
+                if row['구분'] == "🟢 매출":
                     df_raw = conn.read(worksheet="매출", ttl="0")
                     df_clean = df_raw.drop(int(orig_idx)).reset_index(drop=True)
                     conn.update(worksheet="매출", data=df_clean)
-                    st.success("✅ 해당 매출 내역이 정상적으로 삭제되었습니다.")
                 else:
                     df_raw = conn.read(worksheet="지출", ttl="0")
                     df_clean = df_raw.drop(int(orig_idx)).reset_index(drop=True)
                     conn.update(worksheet="지출", data=df_clean)
-                    st.success("✅ 해당 지출 내역이 정상적으로 삭제되었습니다.")
                 
                 st.rerun()
+            st.markdown("<hr style='margin: 0.3rem 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
     else:
         st.info("선택하신 기간 내에 입출금 내역이 없습니다.")
