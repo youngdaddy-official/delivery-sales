@@ -94,23 +94,22 @@ if check_password():
         s_origin = st.text_input("출발지", key="side_s_ori")
         s_dest = st.text_input("도착지", key="side_s_des")
         
-        # --- 요청하신 계산 순서 레이아웃 배치 ---
+        # 💡 요청하신 계산 순서 레이아웃 배치 및 자동 실시간 연동 보완
         s_fare = st.number_input("운임료", min_value=0, value=0, key="s_fare_val", on_change=update_sales_tax)
         
         if 's_tax_val' not in st.session_state:
             st.session_state.s_tax_val = 0
         s_tax = st.number_input("세액 (자동)", min_value=0, key="s_tax_val")
         
-        # 실시간 매출 합계 계산 (운임료 + 세액)
+        # 1. 매출 합계 실시간 계산 (운임료 + 세액) -> 버그 방지를 위해 key 제거
         s_subtotal = s_fare + s_tax
-        st.number_input("매출 합계 (자동)", value=s_subtotal, disabled=True, key="side_s_subtotal")
+        st.number_input("매출 합계 (자동)", value=s_subtotal, disabled=True)
         
         s_fee = st.number_input("수수료", min_value=0, value=0, key="side_s_fee")
         
-        # 실시간 최종 금액 계산 (매출 합계 - 수수료)
+        # 2. 최종 금액 실시간 계산 (매출 합계 - 수수료) -> 버그 방지를 위해 key 제거
         s_final = s_subtotal - s_fee
-        st.number_input("최종 금액 (자동)", value=s_final, disabled=True, key="side_s_final")
-        # ----------------------------------------
+        st.number_input("최종 금액 (자동)", value=s_final, disabled=True)
         
         s_pmethod = st.selectbox("결제방식", ["이체", "현금", "전자세금계산서", "카드"], key="side_s_pm")
         s_status = st.selectbox("수금상태", ["미입금", "일부입금", "완납"], key="side_s_st")
@@ -126,7 +125,7 @@ if check_password():
                     "운임료": int(s_fare),
                     "수수료": int(s_fee),
                     "세액": int(s_tax), 
-                    "합계": int(s_final), # 손익공식을 위해 최종 금액을 구글 시트의 '합계' 컬럼에 보관합니다.
+                    "합계": int(s_final), # 대시보드 수익 계산을 위해 최종 금액을 '합계' 컬럼에 보관합니다.
                     "결제방식": s_pmethod,
                     "수금상태": s_status, 
                     "입금액": int(s_dep), 
