@@ -176,7 +176,6 @@ if check_password():
         e_category = st.selectbox("지출 항목", ["연료비", "통행료", "기타"], key="side_e_cat")
         e_vendor = st.text_input("지출처", key="side_e_ven")
         
-        # 지출 금액 입력창 천 단위 콤마 자동 포맷팅 적용
         e_amount_input = st.text_input("지출 금액", value=f"{st.session_state.side_e_amo:,}")
         e_amount = parse_money(e_amount_input)
         st.session_state.side_e_amo = e_amount
@@ -231,7 +230,7 @@ if check_password():
     st.divider()
     st.subheader("📝 통합 입출금 장부")
 
-    # --- 매출과 지출 데이터 하나로 합치기 로직 ---
+    # --- 💡 [핵심 수정] 모든 항목을 결합하지 않고 각각 개별 열(Column)로 맵핑 ---
     t_sales = pd.DataFrame()
     if not f_sales.empty:
         t_sales = pd.DataFrame({
@@ -239,10 +238,12 @@ if check_password():
             "날짜": f_sales["운송 일자"],
             "구분": "🟢 매출",
             "거래처/지출처": f_sales["거래처"],
-            "상세 내용 (경로/항목)": f_sales["출발지"].astype(str) + " ➡️ " + f_sales["도착지"].astype(str),
-            "매출액(+)": f_sales["합계"],
-            "지출액(-)": 0,
-            "결제/수금 상태": f_sales["결제방식"].astype(str) + " (" + f_sales["수금상태"].astype(str) + ")",
+            "출발지": f_sales["출발지"],
+            "도착지": f_sales["도착지"],
+            "지출항목": "-",
+            "금액": f_sales["합계"],
+            "결제방식": f_sales["결제방식"],
+            "수금상태": f_sales["수금상태"],
             "비고": ""
         })
 
@@ -253,10 +254,12 @@ if check_password():
             "날짜": f_exp["지출 일자"],
             "구분": "🔴 지출",
             "거래처/지출처": f_exp["지출처"],
-            "상세 내용 (경로/항목)": f_exp["지출 항목"],
-            "매출액(+)": 0,
-            "지출액(-)": f_exp["금액"],
-            "결제/수금 상태": "-",
+            "출발지": "-",
+            "도착지": "-",
+            "지출항목": f_exp["지출 항목"],
+            "금액": f_exp["금액"],
+            "결제방식": "-",
+            "수금상태": "-",
             "비고": f_exp["비고"].fillna("").astype(str)
         })
 
@@ -264,51 +267,69 @@ if check_password():
         df_total = pd.concat([t_sales, t_exp], ignore_index=True)
         df_total = df_total.sort_values(by="날짜", ascending=False).reset_index(drop=True)
         
-        # 💡 [새로운 기능] 장부 상세 분류/필터링 대시보드 개설
+        # --- 💡 [새로운 기능] 모든 왼쪽 메뉴 개별 항목에 맞춰 촘촘해진 통합 필터 엔진 개설 ---
         with st.expander("🔍 장부 항목별 상세 분류 필터 고르기", expanded=True):
-            f_col1, f_col2, f_col3 = st.columns(3)
+            f_col1, f_col2, f_col3, f_col4 = st.columns(4)
             with f_col1:
-                filter_type = st.selectbox("1. 구분 분류", ["전체", "🟢 매출", "🔴 지출"])
+                filter_type = st.selectbox("1. 구분 선택", ["전체", "🟢 매출", "🔴 지출"])
             with f_col2:
-                all_clients = ["전체"] + sorted(list(df_total["거래처/지출처"].dropna().unique()))
-                filter_client = st.selectbox("2. 거래처/지출처 분류", all_clients)
+                all_vendors = ["전체"] + sorted(list(df_total["거래처/지출처"].dropna().unique()))
+                filter_vendor = st.selectbox("2. 거래처/지출처", all_vendors)
             with f_col3:
-                all_status = ["전체"] + sorted(list(df_total["결제/수금 상태"].dropna().unique()))
-                filter_status = st.selectbox("3. 결제 및 수금상태 분류", all_status)
+                all_origins = ["전체"] + sorted(list(df_total[df_total["출발지"] != "-"]["출발지"].dropna().unique()))
+                filter_origin = st.selectbox("3. 출발지", all_origins)
+            with f_col4:
+                all_dests = ["전체"] + sorted(list(df_total[df_total["도착지"] != "-"]["도착지"].dropna().unique()))
+                filter_dest = st.selectbox("4. 도착지", all_dests)
+                
+            f_col5, f_col6, f_col7, _ = st.columns(4)
+            with f_col5:
+                all_cats = ["전체"] + sorted(list(df_total[df_total["지출항목"] != "-"]["지출항목"].dropna().unique()))
+                filter_cat = st.selectbox("5. 지출 항목", all_cats)
+            with f_col6:
+                all_pms = ["전체"] + sorted(list(df_total[df_total["결제방식"] != "-"]["결제방식"].dropna().unique()))
+                filter_pm = st.selectbox("6. 결제방식", all_pms)
+            with f_col7:
+                all_sts = ["전체"] + sorted(list(df_total[df_total["수금상태"] != "-"]["수금상태"].dropna().unique()))
+                filter_st = st.selectbox("7. 수금상태", all_sts)
         
-        # 선택한 다중 필터 조건 적용
-        if filter_type != "전체":
-            df_total = df_total[df_total["구분"] == filter_type]
-        if filter_client != "전체":
-            df_total = df_total[df_total["거래처/지출처"] == filter_client]
-        if filter_status != "전체":
-            df_total = df_total[df_total["결제/수금 상태"] == filter_status]
+        # 다중 필터 조건식 처리
+        if filter_type != "전체": df_total = df_total[df_total["구분"] == filter_type]
+        if filter_vendor != "전체": df_total = df_total[df_total["거래처/지출처"] == filter_vendor]
+        if filter_origin != "전체": df_total = df_total[df_total["출발지"] == filter_origin]
+        if filter_dest != "전체": df_total = df_total[df_total["도착지"] == filter_dest]
+        if filter_cat != "전체": df_total = df_total[df_total["지출항목"] == filter_cat]
+        if filter_pm != "전체": df_total = df_total[df_total["결제방식"] == filter_pm]
+        if filter_st != "전체": df_total = df_total[df_total["수금상태"] == filter_st]
         
-        # 필터를 거친 최종 내역이 존재할 때 장부 출력
+        # 필터링 후 최종 결과 출력
         if not df_total.empty:
-            # 표 헤더 생성 (가로 비율 지정)
-            grid_widths = [1.2, 0.8, 1.5, 2.0, 1.2, 1.2, 1.8, 1.5, 0.6]
-            headers = ["날짜", "구분", "거래처/지출처", "상세 내용 (경로/항목)", "매출액(+)", "지출액(-)", "결제/수금 상태", "비고", "삭제"]
+            # 개별 항목 가로 폭 정밀 분할 설정 (총 가로 폭 비율 합산 최적화)
+            grid_widths = [1.1, 0.6, 1.2, 1.0, 1.0, 0.9, 1.1, 0.9, 0.9, 1.2, 0.5]
+            headers = ["날짜", "구분", "거래처/지출처", "출발지", "도착지", "지출항목", "금액", "결제방식", "수금상태", "비고", "삭제"]
             
             col_header = st.columns(grid_widths)
             for col, title in zip(col_header, headers):
                 col.markdown(f"**{title}**")
             st.markdown("<hr style='margin: 0.5rem 0; border-top: 2px solid #ccc;'>", unsafe_allow_html=True)
             
-            # 데이터 행 출력 진행
+            # 장부 개별 열 데이터 매핑 및 출력
             for idx, row in df_total.iterrows():
                 col_row = st.columns(grid_widths)
                 
                 col_row[0].write(str(row["날짜"]))
                 col_row[1].write(row["구분"])
                 col_row[2].write(row["거래처/지출처"])
-                col_row[3].write(row["상세 내용 (경로/항목)"])
-                col_row[4].write(f"{row['매출액(+)']:,}원")
-                col_row[5].write(f"{row['지출액(-)']:,}원")
-                col_row[6].write(row["결제/수금 상태"])
-                col_row[7].write(row["비고"] if row["비고"] != "" else "-")
+                col_row[3].write(row["출발지"])
+                col_row[4].write(row["도착지"])
+                col_row[5].write(row["지출항목"])
+                col_row[6].write(f"{row['금액']:,}원")
+                col_row[7].write(row["결제방식"])
+                col_row[8].write(row["수금상태"])
+                col_row[9].write(row["비고"] if row["비고"] != "" else "-")
                 
-                if col_row[8].button("🗑️", key=f"del_{idx}_{row['원본인덱스']}", type="primary", help="해당 내역 삭제"):
+                # 우측 끝 행별 원클릭 삭제 단추 보존
+                if col_row[10].button("🗑️", key=f"del_{idx}_{row['원본인덱스']}", type="primary", help="해당 내역 삭제"):
                     orig_idx = row['원본인덱스']
                     
                     if row['구분'] == "🟢 매출":
@@ -323,6 +344,6 @@ if check_password():
                     st.rerun()
                 st.markdown("<hr style='margin: 0.3rem 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
         else:
-            st.info("💡 설정하신 필터 조건에 부합하는 장부 내역이 없습니다.")
+            st.info("💡 지정하신 필터 조건에 부합하는 장부 데이터가 존재하지 않습니다.")
     else:
         st.info("선택하신 기간 내에 입출금 내역이 없습니다.")
