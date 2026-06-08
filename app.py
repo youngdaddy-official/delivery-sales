@@ -47,6 +47,8 @@ def load_data(sheet_name):
         if df is None or df.empty:
             return pd.DataFrame()
         df = df.copy()
+        
+        # 데이터 원본 위치 기억 (삭제 시 정확한 추적을 위해 필수)
         df['원본인덱스'] = df.index 
         
         date_col = "운송 일자" if sheet_name == "매출" else "지출 일자"
@@ -192,7 +194,6 @@ st.subheader("📝 통합 입출금 장부")
 t_sales = pd.DataFrame()
 if not f_sales.empty:
     t_sales = pd.DataFrame({
-        "삭제(체크)": False,
         "원본인덱스": f_sales["원본인덱스"],
         "날짜": f_sales["운송 일자"],
         "구분": "🟢 매출",
@@ -213,7 +214,6 @@ if not f_sales.empty:
 t_exp = pd.DataFrame()
 if not f_exp.empty:
     t_exp = pd.DataFrame({
-        "삭제(체크)": False,
         "원본인덱스": f_exp["원본인덱스"],
         "날짜": f_exp["지출 일자"],
         "구분": "🔴 지출",
@@ -267,7 +267,7 @@ if not t_sales.empty or not t_exp.empty:
 
     df_total = df_total.reset_index(drop=True)
     if not df_total.empty:
-        df_total.insert(1, 'No', range(1, len(df_total) + 1))
+        df_total.insert(0, 'No', range(1, len(df_total) + 1))
 
     # 필터링된 결과값 실시간 계산 및 요약 노출
     f_count = len(df_total)
@@ -276,43 +276,51 @@ if not t_sales.empty or not t_exp.empty:
     f_profit_sum = f_sales_sum - f_exp_sum
 
     st.success(f"**📌 검색 결과 요약:** 조회된 내역 총 **{f_count}건** ｜ 매출 합계 **{f_sales_sum:,}원** ｜ 지출 합계 **{f_exp_sum:,}원** ｜ 순수익 **{f_profit_sum:,}원**")
-    st.caption("✅ 내역 앞의 체크박스(☑️)를 누르면, 하단에 삭제 버튼이 나타납니다.")
     
-    edited_df = st.data_editor(
-        df_total,
+    # 💡 [핵심] 버그를 유발하던 체크박스를 없애고, 가장 안전한 '읽기 전용' 표로 고정합니다.
+    st.dataframe(
+        df_total.drop(columns=["원본인덱스"]), 
         use_container_width=True,
         hide_index=True,
         column_config={
-            "삭제(체크)": st.column_config.CheckboxColumn("삭제(체크)", default=False),
             "No": st.column_config.NumberColumn("No", format="%d"),
-            "원본인덱스": None, 
             "운임료": st.column_config.NumberColumn(format="%d원"),
             "매출 합계": st.column_config.NumberColumn(format="%d원"),
             "수수료": st.column_config.NumberColumn(format="%d원"),
             "최종 금액": st.column_config.NumberColumn(format="%d원"),
             "지출액": st.column_config.NumberColumn(format="%d원")
-        },
-        disabled=["No", "날짜", "구분", "거래처/지출처", "출발지", "도착지", "지출항목", "운임료", "매출 합계", "수수료", "최종 금액", "지출액", "결제방식", "수금상태", "비고"]
+        }
     )
 
-    to_delete = edited_df[edited_df["삭제(체크)"] == True]
-    if len(to_delete) > 0:
-        st.warning(f"⚠️ {len(to_delete)}개의 내역을 삭제하도록 선택하셨습니다.")
-        if st.button("🗑️ 선택한 내역 완전히 삭제하기", type="primary"):
-            df_raw_sales = conn.read(worksheet="매출", ttl="0")
-            df_raw_exp = conn.read(worksheet="지출", ttl="0")
+    # 💡 [핵심] 표 바로 아래에 '안전 삭제 구역'을 배치하여 No 번호로만 정확히 지우게 합니다.
+    st.markdown("---")
+    st.markdown("#### 🗑️ 장부 내역 안전 삭제")
+    st.markdown("표에서 지우고 싶은 내역의 **[No]** 번호를 확인하신 후 아래에서 선택해 주세요.")
+    
+    del_c1, del_c2 = st.columns([1, 3])
+    with del_c1:
+        del_options = ["선택 안 함"] + df_total["No"].tolist()
+        del_no = st.selectbox("삭제할 내역의 No 번호", del_options, label_visibility="collapsed")
+        
+    with del_c2:
+        if del_no != "선택 안 함":
+            target_row = df_total[df_total["No"] == del_no].iloc[0]
+            amt = target_row['최종 금액'] if target_row['구분'] == "🟢 매출" else target_row['지출액']
             
-            sales_to_drop = to_delete[to_delete["구분"] == "🟢 매출"]["원본인덱스"].astype(int).tolist()
-            exp_to_drop = to_delete[to_delete["구분"] == "🔴 지출"]["원본인덱스"].astype(int).tolist()
+            st.warning(f"📌 선택됨: **{target_row['구분']} | {target_row['거래처/지출처']} | {amt:,}원**")
             
-            if sales_to_drop:
-                df_raw_sales = df_raw_sales.drop(sales_to_drop).reset_index(drop=True)
-                conn.update(worksheet="매출", data=df_raw_sales)
-            
-            if exp_to_drop:
-                df_raw_exp = df_raw_exp.drop(exp_to_drop).reset_index(drop=True)
-                conn.update(worksheet="지출", data=df_raw_exp)
-            
-            st.rerun()
+            if st.button(f"❌ [No.{del_no}] 선택한 내역 완전히 삭제하기", type="primary"):
+                orig_idx = target_row["원본인덱스"]
+                
+                if target_row["구분"] == "🟢 매출":
+                    df_raw = conn.read(worksheet="매출", ttl="0")
+                    df_raw = df_raw.drop(int(orig_idx)).reset_index(drop=True)
+                    conn.update(worksheet="매출", data=df_raw)
+                else:
+                    df_raw = conn.read(worksheet="지출", ttl="0")
+                    df_raw = df_raw.drop(int(orig_idx)).reset_index(drop=True)
+                    conn.update(worksheet="지출", data=df_raw)
+                
+                st.rerun()
 else:
     st.info("선택하신 기간 내에 입출금 내역이 없습니다.")
