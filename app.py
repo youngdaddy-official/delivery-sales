@@ -176,6 +176,7 @@ if check_password():
         e_category = st.selectbox("지출 항목", ["연료비", "통행료", "기타"], key="side_e_cat")
         e_vendor = st.text_input("지출처", key="side_e_ven")
         
+        # 지출 금액 입력창 천 단위 콤마 자동 포맷팅 적용
         e_amount_input = st.text_input("지출 금액", value=f"{st.session_state.side_e_amo:,}")
         e_amount = parse_money(e_amount_input)
         st.session_state.side_e_amo = e_amount
@@ -206,14 +207,14 @@ if check_password():
     
     col_date, _ = st.columns([1, 1])
     with col_date:
-        date_range = st.date_input("조회 기간", [date.today().replace(day=1), date.today()])
+        date_range = st.date_input("조회 기간(필터)", [date.today().replace(day=1), date.today()])
     
     if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
         start_d, end_d = date_range
     else:
         start_d = end_d = date_range[0] if isinstance(date_range, (list, tuple)) else date_range
 
-    # 데이터 필터링
+    # 데이터 기간 1차 필터링
     f_sales = df_sales[(df_sales['운송 일자'] >= start_d) & (df_sales['운송 일자'] <= end_d)] if not df_sales.empty else pd.DataFrame()
     f_exp = df_exp[(df_exp['지출 일자'] >= start_d) & (df_exp['지출 일자'] <= end_d)] if not df_exp.empty else pd.DataFrame()
 
@@ -263,42 +264,65 @@ if check_password():
         df_total = pd.concat([t_sales, t_exp], ignore_index=True)
         df_total = df_total.sort_values(by="날짜", ascending=False).reset_index(drop=True)
         
-        # 표 헤더 생성 (가로 비율 지정)
-        grid_widths = [1.2, 0.8, 1.5, 2.0, 1.2, 1.2, 1.8, 1.5, 0.6]
-        headers = ["날짜", "구분", "거래처/지출처", "상세 내용 (경로/항목)", "매출액(+)", "지출액(-)", "결제/수금 상태", "비고", "삭제"]
+        # 💡 [새로운 기능] 장부 상세 분류/필터링 대시보드 개설
+        with st.expander("🔍 장부 항목별 상세 분류 필터 고르기", expanded=True):
+            f_col1, f_col2, f_col3 = st.columns(3)
+            with f_col1:
+                filter_type = st.selectbox("1. 구분 분류", ["전체", "🟢 매출", "🔴 지출"])
+            with f_col2:
+                all_clients = ["전체"] + sorted(list(df_total["거래처/지출처"].dropna().unique()))
+                filter_client = st.selectbox("2. 거래처/지출처 분류", all_clients)
+            with f_col3:
+                all_status = ["전체"] + sorted(list(df_total["결제/수금 상태"].dropna().unique()))
+                filter_status = st.selectbox("3. 결제 및 수금상태 분류", all_status)
         
-        col_header = st.columns(grid_widths)
-        for col, title in zip(col_header, headers):
-            col.markdown(f"**{title}**")
-        st.markdown("<hr style='margin: 0.5rem 0; border-top: 2px solid #ccc;'>", unsafe_allow_html=True)
+        # 선택한 다중 필터 조건 적용
+        if filter_type != "전체":
+            df_total = df_total[df_total["구분"] == filter_type]
+        if filter_client != "전체":
+            df_total = df_total[df_total["거래처/지출처"] == filter_client]
+        if filter_status != "전체":
+            df_total = df_total[df_total["결제/수금 상태"] == filter_status]
         
-        # 데이터 행 출력 진행
-        for idx, row in df_total.iterrows():
-            col_row = st.columns(grid_widths)
+        # 필터를 거친 최종 내역이 존재할 때 장부 출력
+        if not df_total.empty:
+            # 표 헤더 생성 (가로 비율 지정)
+            grid_widths = [1.2, 0.8, 1.5, 2.0, 1.2, 1.2, 1.8, 1.5, 0.6]
+            headers = ["날짜", "구분", "거래처/지출처", "상세 내용 (경로/항목)", "매출액(+)", "지출액(-)", "결제/수금 상태", "비고", "삭제"]
             
-            col_row[0].write(str(row["날짜"]))
-            col_row[1].write(row["구분"])
-            col_row[2].write(row["거래처/지출처"])
-            col_row[3].write(row["상세 내용 (경로/항목)"])
-            col_row[4].write(f"{row['매출액(+)']:,}원")
-            col_row[5].write(f"{row['지출액(-)']:,}원")
-            col_row[6].write(row["결제/수금 상태"])
-            col_row[7].write(row["비고"] if row["비고"] != "" else "-")
+            col_header = st.columns(grid_widths)
+            for col, title in zip(col_header, headers):
+                col.markdown(f"**{title}**")
+            st.markdown("<hr style='margin: 0.5rem 0; border-top: 2px solid #ccc;'>", unsafe_allow_html=True)
             
-            # 💡 오류 원인이던 st.clear_caches()를 제거하여 정상 작동하도록 수정했습니다.
-            if col_row[8].button("🗑️", key=f"del_{idx}_{row['원본인덱스']}", type="primary", help="해당 내역 삭제"):
-                orig_idx = row['원본인덱스']
+            # 데이터 행 출력 진행
+            for idx, row in df_total.iterrows():
+                col_row = st.columns(grid_widths)
                 
-                if row['구분'] == "🟢 매출":
-                    df_raw = conn.read(worksheet="매출", ttl="0")
-                    df_clean = df_raw.drop(int(orig_idx)).reset_index(drop=True)
-                    conn.update(worksheet="매출", data=df_clean)
-                else:
-                    df_raw = conn.read(worksheet="지출", ttl="0")
-                    df_clean = df_raw.drop(int(orig_idx)).reset_index(drop=True)
-                    conn.update(worksheet="지출", data=df_clean)
+                col_row[0].write(str(row["날짜"]))
+                col_row[1].write(row["구분"])
+                col_row[2].write(row["거래처/지출처"])
+                col_row[3].write(row["상세 내용 (경로/항목)"])
+                col_row[4].write(f"{row['매출액(+)']:,}원")
+                col_row[5].write(f"{row['지출액(-)']:,}원")
+                col_row[6].write(row["결제/수금 상태"])
+                col_row[7].write(row["비고"] if row["비고"] != "" else "-")
                 
-                st.rerun()
-            st.markdown("<hr style='margin: 0.3rem 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
+                if col_row[8].button("🗑️", key=f"del_{idx}_{row['원본인덱스']}", type="primary", help="해당 내역 삭제"):
+                    orig_idx = row['원본인덱스']
+                    
+                    if row['구분'] == "🟢 매출":
+                        df_raw = conn.read(worksheet="매출", ttl="0")
+                        df_clean = df_raw.drop(int(orig_idx)).reset_index(drop=True)
+                        conn.update(worksheet="매출", data=df_clean)
+                    else:
+                        df_raw = conn.read(worksheet="지출", ttl="0")
+                        df_clean = df_raw.drop(int(orig_idx)).reset_index(drop=True)
+                        conn.update(worksheet="지출", data=df_clean)
+                    
+                    st.rerun()
+                st.markdown("<hr style='margin: 0.3rem 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
+        else:
+            st.info("💡 설정하신 필터 조건에 부합하는 장부 내역이 없습니다.")
     else:
         st.info("선택하신 기간 내에 입출금 내역이 없습니다.")
