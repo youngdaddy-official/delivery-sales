@@ -99,7 +99,6 @@ if check_password():
     with st.sidebar:
         st.header("📝 신규 내역 등록")
         
-        # [구역 1] 매출 등록 입력창
         st.subheader("🟢 신규 매출 등록")
         s_date = st.date_input("운송 일자", date.today(), key="side_s_date")
         s_client = st.text_input("거래처명", key="side_s_client")
@@ -169,7 +168,6 @@ if check_password():
 
         st.markdown("---") 
         
-        # [구역 2] 지출 등록 입력창
         st.subheader("🔴 신규 지출 등록")
         e_date = st.date_input("지출 일자", date.today(), key="side_e_date")
         e_category = st.selectbox("지출 항목", ["연료비", "통행료", "기타"], key="side_e_cat")
@@ -225,9 +223,7 @@ if check_password():
 
     st.divider()
     st.subheader("📝 통합 입출금 장부")
-    st.caption("💡 각 열의 제목(이름)을 클릭하면 정렬할 수 있고, 제목 위에 마우스를 올리면 나타나는 **돋보기 아이콘(🔍)을 눌러 필터링** 할 수 있습니다.")
 
-    # --- 💡 요청하신 구조에 맞춰 완벽 분리된 통합 장부 데이터 매핑 ---
     t_sales = pd.DataFrame()
     if not f_sales.empty:
         t_sales = pd.DataFrame({
@@ -242,7 +238,7 @@ if check_password():
             "운임료": f_sales["운임료"],
             "매출 합계": f_sales["운임료"] + f_sales["세액"],
             "수수료": f_sales["수수료"],
-            "최종 금액": f_sales["합계"], # 최종금액 (매출합계-수수료)
+            "최종 금액": f_sales["합계"],
             "지출액": 0,
             "결제방식": f_sales["결제방식"],
             "수금상태": f_sales["수금상태"],
@@ -273,30 +269,60 @@ if check_password():
     if not t_sales.empty or not t_exp.empty:
         df_total = pd.concat([t_sales, t_exp], ignore_index=True)
         df_total = df_total.sort_values(by="날짜", ascending=False).reset_index(drop=True)
+
+        # 💡 [핵심] 엑셀처럼 여러 개를 동시에 선택할 수 있는 '다중 선택 필터' UI 구축
+        st.markdown("##### 🔍 엑셀형 다중 선택 필터 (원하는 항목을 클릭하여 자유롭게 검색하세요)")
+        f1, f2, f3, f4, f5, f6 = st.columns(6)
         
-        # 💡 [핵심 구현] 엑셀형 표 (표 안에서 필터링 & 체크박스 삭제 지원)
+        with f1:
+            opt_type = df_total["구분"].unique().tolist()
+            sel_type = st.multiselect("구분", opt_type, placeholder="전체 선택")
+        with f2:
+            opt_ven = [x for x in df_total["거래처/지출처"].unique().tolist() if x != ""]
+            sel_ven = st.multiselect("거래처/지출처", opt_ven, placeholder="전체 선택")
+        with f3:
+            opt_ori = [x for x in df_total["출발지"].unique().tolist() if x != ""]
+            sel_ori = st.multiselect("출발지", opt_ori, placeholder="전체 선택")
+        with f4:
+            opt_dest = [x for x in df_total["도착지"].unique().tolist() if x != ""]
+            sel_dest = st.multiselect("도착지", opt_dest, placeholder="전체 선택")
+        with f5:
+            opt_pm = [x for x in df_total["결제방식"].unique().tolist() if x != ""]
+            sel_pm = st.multiselect("결제방식", opt_pm, placeholder="전체 선택")
+        with f6:
+            opt_st = [x for x in df_total["수금상태"].unique().tolist() if x != ""]
+            sel_st = st.multiselect("수금상태", opt_st, placeholder="전체 선택")
+
+        # 다중 선택된 필터 조건 적용 (하나라도 선택되면 해당 내용만 필터링)
+        if sel_type: df_total = df_total[df_total["구분"].isin(sel_type)]
+        if sel_ven: df_total = df_total[df_total["거래처/지출처"].isin(sel_ven)]
+        if sel_ori: df_total = df_total[df_total["출발지"].isin(sel_ori)]
+        if sel_dest: df_total = df_total[df_total["도착지"].isin(sel_dest)]
+        if sel_pm: df_total = df_total[df_total["결제방식"].isin(sel_pm)]
+        if sel_st: df_total = df_total[df_total["수금상태"].isin(sel_st)]
+
+        st.caption("✅ 내역 앞의 체크박스(☑️)를 누르면, 하단에 삭제 버튼이 나타납니다.")
+        
         edited_df = st.data_editor(
             df_total,
             use_container_width=True,
             hide_index=True,
             column_config={
                 "삭제(체크)": st.column_config.CheckboxColumn("삭제(체크)", default=False),
-                "원본인덱스": None, # 백엔드용 데이터 숨김
+                "원본인덱스": None, 
                 "운임료": st.column_config.NumberColumn(format="%d원"),
                 "매출 합계": st.column_config.NumberColumn(format="%d원"),
                 "수수료": st.column_config.NumberColumn(format="%d원"),
                 "최종 금액": st.column_config.NumberColumn(format="%d원"),
                 "지출액": st.column_config.NumberColumn(format="%d원")
             },
-            # 삭제용 체크박스만 선택 가능하고, 장부 데이터는 읽기 전용으로 보호
             disabled=["날짜", "구분", "거래처/지출처", "출발지", "도착지", "지출항목", "운임료", "매출 합계", "수수료", "최종 금액", "지출액", "결제방식", "수금상태", "비고"]
         )
 
-        # 체크박스로 선택된 내역 일괄 삭제 기능
         to_delete = edited_df[edited_df["삭제(체크)"] == True]
         if len(to_delete) > 0:
             st.warning(f"⚠️ {len(to_delete)}개의 내역을 삭제하도록 선택하셨습니다.")
-            if st.button("🗑️ 선택한 내역 삭제하기", type="primary"):
+            if st.button("🗑️ 선택한 내역 완전히 삭제하기", type="primary"):
                 df_raw_sales = conn.read(worksheet="매출", ttl="0")
                 df_raw_exp = conn.read(worksheet="지출", ttl="0")
                 
