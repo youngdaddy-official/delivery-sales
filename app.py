@@ -198,7 +198,7 @@ if check_password():
 
     # --- [메인 화면: 대시보드 및 통합 장부] ---
     st.title("📊 매출 및 지출 통합 관리시스템")
-    st.subheader("📈 통합 현황 요약")
+    st.subheader("📈 전체 기간 현황 요약")
     
     col_date, _ = st.columns([1, 1])
     with col_date:
@@ -270,7 +270,6 @@ if check_password():
         df_total = pd.concat([t_sales, t_exp], ignore_index=True)
         df_total = df_total.sort_values(by="날짜", ascending=False).reset_index(drop=True)
 
-        # 💡 [핵심] 엑셀처럼 여러 개를 동시에 선택할 수 있는 '다중 선택 필터' UI 구축
         st.markdown("##### 🔍 엑셀형 다중 선택 필터 (원하는 항목을 클릭하여 자유롭게 검색하세요)")
         f1, f2, f3, f4, f5, f6 = st.columns(6)
         
@@ -293,13 +292,21 @@ if check_password():
             opt_st = [x for x in df_total["수금상태"].unique().tolist() if x != ""]
             sel_st = st.multiselect("수금상태", opt_st, placeholder="전체 선택")
 
-        # 다중 선택된 필터 조건 적용 (하나라도 선택되면 해당 내용만 필터링)
+        # 다중 선택된 필터 조건 적용
         if sel_type: df_total = df_total[df_total["구분"].isin(sel_type)]
         if sel_ven: df_total = df_total[df_total["거래처/지출처"].isin(sel_ven)]
         if sel_ori: df_total = df_total[df_total["출발지"].isin(sel_ori)]
         if sel_dest: df_total = df_total[df_total["도착지"].isin(sel_dest)]
         if sel_pm: df_total = df_total[df_total["결제방식"].isin(sel_pm)]
         if sel_st: df_total = df_total[df_total["수금상태"].isin(sel_st)]
+
+        # 💡 [새로운 기능] 필터링된 결과값 실시간 계산 및 요약 노출
+        f_count = len(df_total)
+        f_sales_sum = int(df_total[df_total["구분"] == "🟢 매출"]["최종 금액"].sum()) if not df_total.empty else 0
+        f_exp_sum = int(df_total[df_total["구분"] == "🔴 지출"]["지출액"].sum()) if not df_total.empty else 0
+        f_profit_sum = f_sales_sum - f_exp_sum
+
+        st.success(f"**📌 검색 결과 요약:** 조회된 내역 총 **{f_count}건** ｜ 매출 합계 **{f_sales_sum:,}원** ｜ 지출 합계 **{f_exp_sum:,}원** ｜ 순수익 **{f_profit_sum:,}원**")
 
         st.caption("✅ 내역 앞의 체크박스(☑️)를 누르면, 하단에 삭제 버튼이 나타납니다.")
         
