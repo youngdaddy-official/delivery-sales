@@ -300,14 +300,18 @@ if check_password():
         if sel_pm: df_total = df_total[df_total["결제방식"].isin(sel_pm)]
         if sel_st: df_total = df_total[df_total["수금상태"].isin(sel_st)]
 
-        # 💡 [새로운 기능] 필터링된 결과값 실시간 계산 및 요약 노출
+        # 💡 [핵심] 필터가 적용된 상태에서 결과의 No(연번) 컬럼을 생성합니다.
+        df_total = df_total.reset_index(drop=True)
+        if not df_total.empty:
+            df_total.insert(1, 'No', range(1, len(df_total) + 1))
+
+        # 필터링된 결과값 실시간 계산 및 요약 노출
         f_count = len(df_total)
         f_sales_sum = int(df_total[df_total["구분"] == "🟢 매출"]["최종 금액"].sum()) if not df_total.empty else 0
         f_exp_sum = int(df_total[df_total["구분"] == "🔴 지출"]["지출액"].sum()) if not df_total.empty else 0
         f_profit_sum = f_sales_sum - f_exp_sum
 
         st.success(f"**📌 검색 결과 요약:** 조회된 내역 총 **{f_count}건** ｜ 매출 합계 **{f_sales_sum:,}원** ｜ 지출 합계 **{f_exp_sum:,}원** ｜ 순수익 **{f_profit_sum:,}원**")
-
         st.caption("✅ 내역 앞의 체크박스(☑️)를 누르면, 하단에 삭제 버튼이 나타납니다.")
         
         edited_df = st.data_editor(
@@ -316,6 +320,7 @@ if check_password():
             hide_index=True,
             column_config={
                 "삭제(체크)": st.column_config.CheckboxColumn("삭제(체크)", default=False),
+                "No": st.column_config.NumberColumn("No", format="%d"),
                 "원본인덱스": None, 
                 "운임료": st.column_config.NumberColumn(format="%d원"),
                 "매출 합계": st.column_config.NumberColumn(format="%d원"),
@@ -323,7 +328,7 @@ if check_password():
                 "최종 금액": st.column_config.NumberColumn(format="%d원"),
                 "지출액": st.column_config.NumberColumn(format="%d원")
             },
-            disabled=["날짜", "구분", "거래처/지출처", "출발지", "도착지", "지출항목", "운임료", "매출 합계", "수수료", "최종 금액", "지출액", "결제방식", "수금상태", "비고"]
+            disabled=["No", "날짜", "구분", "거래처/지출처", "출발지", "도착지", "지출항목", "운임료", "매출 합계", "수수료", "최종 금액", "지출액", "결제방식", "수금상태", "비고"]
         )
 
         to_delete = edited_df[edited_df["삭제(체크)"] == True]
